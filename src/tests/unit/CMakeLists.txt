@@ -485,8 +485,6 @@ desbordante_add_test(
     ${DESBORDANTE_PREFIX}::ind::spider
     ${DESBORDANTE_PREFIX}::ind::mind
     ${DESBORDANTE_PREFIX}::ind::faida
-    ${DESBORDANTE_PREFIX}::rfd::ga_rfd
-    ${DESBORDANTE_PREFIX}::rfd
     spdlog::spdlog_header_only
     Boost::headers
 )
@@ -749,6 +747,6 @@ desbordante_add_test(
     ${DESBORDANTE_PREFIX}::model::table
     ${DESBORDANTE_PREFIX}::model::types
     spdlog::spdlog_header_only
-    better-enums
+    magic_enum::magic_enum
     Boost::headers
 )
