@@ -1,5 +1,7 @@
 #include <pybind11/pybind11.h>
 
+#include <string>
+
 #include <pybind11/stl.h>
 
 #include "core/algorithms/rfd/ga_rfd/ga_rfd.h"

@@ -21,6 +21,7 @@
 #include "core/config/custom_metric/custom_metric/type.h"
 #include "core/config/custom_metric/custom_metrics/type.h"
 #include "core/config/custom_metric/custom_vector_metric/type.h"
+#include "core/algorithms/rfd/ga_rfd/rng_engine.h"
 #include "core/config/custom_random_seed/type.h"
 #include "core/config/equal_nulls/type.h"
 #include "core/config/error/type.h"
@@ -71,6 +72,7 @@ std::unordered_map<std::type_index, ConvFunction> const kConverters{
         kEnumConvPair<algos::hymd::LevelDefinition>,
         kEnumConvPair<algos::des::DifferentialStrategy>,
         kEnumConvPair<algos::od::Ordering>,
+        kEnumConvPair<algos::rfd::RngEngine>,
         kEnumConvPair<algos::AfdErrorMeasure>};
 }  // namespace
 
