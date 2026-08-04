@@ -254,8 +254,12 @@ print("""
                           or a list of values (one per column). Values 
                           must be in [0,1]. (default {1.0, 1.0, ...})
   seed                  - seed for reproducible results (default 123)
-  cache_size            - maximum number of cached comparisons, the bigger 
-                          the faster the algorithm will be (default 10000)
+  rng_engine            - random number generator engine: one of 'mt19937',
+                          'pcg32', 'xoshiro256' or 'minstd_rand' (default 'mt19937')
+  threads               - number of worker threads for evaluation
+                          (0 or 1 = single-threaded, default 0)
+  cache_size            - retained for compatibility (no longer used; support
+                          is precomputed or computed on the fly)
 """)
 printlns(
     "  Note: the paper that introduced GA-RFD evaluates the probabilities 0.85/0.3 " + 
@@ -520,6 +524,29 @@ printlns(
     "same results across runs, always set the seed parameter: " + 
     "algo.execute(seed=42). Without a fixed seed, two runs with the " + 
     "same parameters may return slightly different sets of RFDs."
+)
+printlns(
+    "  Reproducibility is determined by three things working together: the seed, " +
+    "the random number generator engine (rng_engine), and the input data. The " +
+    "same seed with the same rng_engine always yields identical RFDs, regardless " +
+    "of how many threads you use. This makes experiments comparable and debuggable."
+)
+printlns(
+    "  The rng_engine option chooses the underlying generator: 'mt19937' (the " +
+    "default, large internal state, good statistical quality), 'pcg32' and " +
+    "'xoshiro256' (smaller, faster state and faster per-call throughput, which " +
+    "can shorten the inner GA loops), and 'minstd_rand' (a tiny 32-bit LCG, the " +
+    "cheapest engine, useful when RNG throughput is the limiting factor). All of " +
+    "them are deterministic given a seed; they just explore the search space " +
+    "differently, so results may vary between engines even with the same seed."
+)
+printlns(
+    "  The threads option parallelizes population evaluation. It is race-free and " +
+    "still reproducible with a fixed seed: 'threads = 1' and 'threads = 4' produce " +
+    "the exact same RFD set. Use 0 or 1 for single-threaded execution; higher " +
+    "values can speed up large datasets. The cache_size option is retained for " +
+    "compatibility but is no longer used, since support is now precomputed (for " +
+    "small attribute counts) or computed on the fly."
 )
 
 # ------------------------------------------------------------
