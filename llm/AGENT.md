@@ -10,8 +10,8 @@ All concrete, checkable requirements live in **`RULES.md`** as an ordered set of
 checkboxes. This file describes **how to run the review** and how to report it.
 `RULES.md` is the source of truth for *what* to check; `AGENT.md` is *how*.
 
-> These two files (`AGENT.md` + `RULES.md`) are the generic successors that 
-> apply to any algorithm.
+> These two files (`AGENT.md` + `RULES.md`) are algorithm-agnostic: they
+> apply to any algorithm contribution.
 
 ## Review scope
 

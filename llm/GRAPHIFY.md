@@ -104,12 +104,12 @@ user says not to use it.
 
 ## Honesty rules
 
-- Paper↔code bridge edges (relation `semantically_similar_to`, `INFERRED`,
-  confidence 0.85, `_origin: paper-code-bridge`) are model-reasoned: they match a
+- Paper↔code bridge edges (relation `semantically_similar_to`, confidence
+  `INFERRED`, `_origin: paper-code-bridge`) are model-reasoned: they match a
   paper's title stem to the code module that implements it. Treat them as
   suggestions, not facts.
-- `AMBIGUOUS` edges (confidence 0.1-0.3) are flagged for review — do not cite
-  them as fact.
+- Edge confidence is categorical (`EXTRACTED` vs `INFERRED`), not numeric —
+  prefer `EXTRACTED` edges as evidence and weigh `INFERRED` ones accordingly.
 - If the graph has no relevant vocabulary for a question, say so instead of
   substituting near-synonyms.
 

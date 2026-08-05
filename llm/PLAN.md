@@ -90,12 +90,12 @@ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
 # 3. Performance governor on all CPUs
 for i in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 do
-  echo performance > $i
+  echo performance | sudo tee $i
 done
 
 # 4. Disable specific CPUs and turbo (cpuX = a real CPU id on this machine)
-echo 0 > /sys/devices/system/cpu/cpuX/online
-echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
+echo 0 | sudo tee /sys/devices/system/cpu/cpuX/online
+echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
 
 # 5. Pin the CPU frequency to half of the maximum (non-turbo) frequency.
 #    Half-of-max is deterministic and machine-independent: it works on any

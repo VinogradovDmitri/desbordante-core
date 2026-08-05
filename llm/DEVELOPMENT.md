@@ -64,6 +64,10 @@ newer versions of the same packages — both are fine.
 
 ### 0.5 Formatting tools
 
+Skip this step if you ran §0.4: `llm/requirements.txt` already pins
+`clang-format==22.1.8` and `cmake-format==0.6.13`. Otherwise install them
+explicitly:
+
 ```sh
 uv pip install "clang-format==22.1.8"   # same version CI uses
 uv pip install cmake-format             # provides cmake-format, cmake-lint, cmake-annotate
@@ -285,7 +289,7 @@ python3 -m pytest examples/test_examples/test_examples_pytest.py --snapshot-upda
 > **Warning:** `--snapshot-update -k <filter>` rewrites the whole snapshot file
 > from the *executed* tests only — it **drops every deselected snapshot**.
 > To update a subset, back up the file first, or run the full
-> `--snapshot-update` (all 61 examples, slow) and keep only the wanted
+> `--snapshot-update` (slow — runs every example) and keep only the wanted
 > entries.
 
 Snapshot file notes:

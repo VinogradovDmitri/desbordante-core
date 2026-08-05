@@ -236,10 +236,10 @@ SIMD or parallelism.**
       `uint16_t` where bounds are guaranteed; keep the missing-value sentinel
       out of the valid dictionary-ID range.
 - [ ] **Try implementing a cache** where profiling shows repeated identical
-      work — e.g. the same partition intersection, error metric, cardinality,
-      or statistics queried many times. A small reuse-likelihood or LRU
-      layer can remove the work entirely; measure hit rate and keep it only
-      if it pays.
+      work — the §2 caching policy applied at the data-structure level: the
+      same partition intersection, error metric, cardinality, or statistics
+      queried many times. A small reuse-likelihood or LRU layer can remove
+      the work entirely; measure hit rate and keep it only if it pays.
 - [ ] Use **huge pages**: `madvise(MADV_HUGEPAGE)` on multi-GB structures
       (PLI/partition buffers, big bitset arenas). TLB misses drop, but
       allocation and paging behavior change — benchmark before adopting.
@@ -294,10 +294,11 @@ SIMD or parallelism.**
       (log/exp/trig tables, bit-reversal, month lengths) instead of
       recomputing.
 - [ ] **Lazy evaluation**: defer expensive work (statistics, materialized
-      values, name resolution) until results are actually requested.
+      values, name resolution) until results are actually requested (cf. §3
+      lazy statistics, §10 deferred name resolution).
 - [ ] **Fast-path / slow-path separation**: handle common data shapes
       (unquoted CSV, no nulls, sorted input) in a lean dedicated path; keep
-      the general path correct but cold.
+      the general path correct but cold (cf. §7 parsing fast path).
 
 ## 6. Parallelization (precise, per-dataset)
 
