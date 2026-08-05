@@ -235,6 +235,21 @@ SIMD or parallelism.**
 - [ ] Use the smallest safe integer type: `uint32_t` instead of `size_t`,
       `uint16_t` where bounds are guaranteed; keep the missing-value sentinel
       out of the valid dictionary-ID range.
+- [ ] **Try implementing a cache** where profiling shows repeated identical
+      work — e.g. the same partition intersection, error metric, cardinality,
+      or statistics queried many times. A small reuse-likelihood or LRU
+      layer can remove the work entirely; measure hit rate and keep it only
+      if it pays.
+- [ ] Use **huge pages**: `madvise(MADV_HUGEPAGE)` on multi-GB structures
+      (PLI/partition buffers, big bitset arenas). TLB misses drop, but
+      allocation and paging behavior change — benchmark before adopting.
+- [ ] **Try different mallocs**: jemalloc / mimalloc / tcmalloc often help
+      allocation-heavy phases (lattice vertices, clusters, hash tables).
+      Swap the allocator in the benchmark build only, measure, revert if no
+      gain (see §12).
+- [ ] **Use indexes**: permutation / rank index arrays over values instead of
+      moving data — sort row IDs, not rows; reference columns by index; avoid
+      materializing copies of values that only need addressing.
 - [ ] Cache-friendly chunking: process data in blocks that fit L2/L3; run the
       inner loop over the whole chunk.
 - [ ] Hot/cold field splitting: keep frequently accessed metadata together,
@@ -249,14 +264,18 @@ SIMD or parallelism.**
 - [ ] Enable compiler auto-vectorization first: simple loops, contiguous
       access, no virtual calls, no complex branches; verify with
       `-fopt-info-vec` / `-Rpass=vector`.
-- [ ] Use word-level bit tricks before intrinsics: subset check
-      (a & b) == a on `uint64_t` words; `std::popcount` / ctz builtins.
+- [ ] **Bit-manipulation is prioritized** over SIMD: word-level tricks on
+      `uint64_t` words — subset check `(a & b) == a`, intersection / union /
+      difference via `& | ^`, `std::popcount` / ctz / rotl builtins,
+      bit-packing to halve memory footprint. Portable, often wins alone;
+      reach for intrinsics only when these are not enough.
 - [ ] SIMD only after layout is fixed, and on contiguous buffers only — it's
       a magnifier, not a magic wand (DFD: theoretical ×3, observed 3%).
 - [ ] Guard intrinsics with runtime dispatch (`__builtin_cpu_supports`) or
       `#ifdef` fallbacks — this project ships binaries to unknown hardware.
-- [ ] Branchless code for predictable-avoidable branches: conditional
-      arithmetic, bitmasks, `count += (x == y)`.
+- [ ] **Branchless code is prioritized** where branches are data-dependent
+      and avoidable: conditional arithmetic, bitmasks, `count += (x == y)`;
+      sort/group data first when it makes branches predictable.
 - [ ] `[[likely]]`/`[[unlikely]]` on strongly skewed branches only.
 - [ ] `__restrict__` on buffers that don't alias; hoist loop-invariants and
       loop-invariant metadata lookups out of inner loops.
@@ -264,6 +283,21 @@ SIMD or parallelism.**
       profiling shows the misses.
 - [ ] Manual unrolling rarely wins; let the compiler do it.
 - [ ] Benchmark SIMD on real datasets, never synthetic loops.
+
+### Tricks worth trying (small, targeted, easy to revert)
+
+- [ ] **Avoid division** in hot loops: multiply + shift by a precomputed
+      reciprocal when the divisor is loop-invariant.
+- [ ] **Loop fusion**: combine several passes over the same data into one
+      pass — fewer cache misses and less index overhead.
+- [ ] **Precomputed lookup tables** (`constexpr`) for common computations
+      (log/exp/trig tables, bit-reversal, month lengths) instead of
+      recomputing.
+- [ ] **Lazy evaluation**: defer expensive work (statistics, materialized
+      values, name resolution) until results are actually requested.
+- [ ] **Fast-path / slow-path separation**: handle common data shapes
+      (unquoted CSV, no nulls, sorted input) in a lean dedicated path; keep
+      the general path correct but cold.
 
 ## 6. Parallelization (precise, per-dataset)
 
