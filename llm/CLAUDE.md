@@ -13,13 +13,26 @@ Performance tasks: read `llm/PERFORMANCE.md` (optimization checklist) and
    first task is **always** to create all todo files up front — one per phase,
    for **every** task even small ones (a small task gets just `bin/todo_1.md`).
    Follow-up tasks go into them (e.g. the next tasks into `bin/todo_1.md`).
-2. **Environment bootstrap** (`llm/DEVELOPMENT.md` §0, fresh machine only):
+2. **Session log** — create or append `bin/session_<YYYY-MM-DD>.md`: record
+   the task up front, then every command run + its result as you go. Key
+   decisions verified with the user (§1) are logged one per line:
+   `Decision: <question> | Chosen: <option> | Confirmed by: user`.
+   `bin/` is the agent's state dir (untracked, per-clone): todo files,
+   session logs, and measurement logs all live there, so any later session
+   can replay or audit what was done.
+3. **Environment bootstrap** (`llm/DEVELOPMENT.md` §0, fresh machine only):
    create `.venv`, install all requirements, install `uv` and
    `cmake-format`/`clang-format` — then verify.
-3. **Knowledge graph** (§7): ensure `graphify-out/graph.json` exists and is
-   current — create it if missing, `bin/graphify-update` if stale — then
-   consult it.
-4. **Build parallelism** (§8): compute CNT_CPU_CORE on this machine and build
+4. **Knowledge graph** (§7): ensure `graphify-out/graph.json` exists and is
+   current — create it if missing, `llm/graphify-update` if stale — then
+   consult it. **The graph tools may be unrunnable in this environment
+   (missing CLI, no API key, long runtime): before creating or updating,
+   ask the user whether they can run it.** If yes, hand them the exact
+   command, let them run it manually, and wait for their call-back before
+   consulting the graph. If they cannot run it, use the existing
+   `graphify-out/graph.json` as-is and note its vintage (last update) when
+   citing it.
+5. **Build parallelism** (§8): compute CNT_CPU_CORE on this machine and build
    with `-j<CNT_CPU_CORE / 2>` for tests, performance, and just-check builds
    alike.
 
@@ -32,6 +45,13 @@ Before implementing:
   first** — about intent, scope, or success criteria, so the job is done
   comprehensively. Never silently pick among interpretations.
 - State your assumptions explicitly. If uncertain, ask.
+- **Not certain → ask.** When unsure about intent, scope, a value, or an
+  interpretation, asking the user is mandatory — never proceed on a guess. A
+  wrong guess costs more than a question.
+- **Key decisions are verified explicitly.** Scope, approach, interfaces, and
+  tradeoffs get confirmed by the user before acting — then recorded in the
+  session log with the option chosen. Nothing important rides on an implicit
+  "probably".
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
@@ -84,6 +104,16 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+Before starting, write the acceptance criteria into the todo file — precise
+and checkable ("`ctest -R <algo>` passes", "output matches the format of
+`<existing example>`"), never vague ("works well"):
+
+- When a good past example of the deliverable exists (an algorithm, an
+  example script, a review), **name it and match its format**.
+- Before reporting done, run a **second-pass review**: a fresh reviewer pass
+  (or a second model) checks the final output against the written criteria;
+  findings are fixed or explicitly waived, not ignored.
+
 ## 5. Verify Before Done
 
 **Never declare completion on assumption. Run the checks.**
@@ -110,8 +140,13 @@ Before reporting a task as done, all of the following must hold:
 - [ ] Targeted tests pass (`ctest --test-dir build -R "<algo>"`)
 - [ ] Python examples and snapshots pass (`pytest ... -k <algo>`; snapshots
       regenerated via the harness and re-verified if output changed)
-- [ ] Knowledge graph refreshed — `bin/graphify-update` run after code
+- [ ] Knowledge graph refreshed — `llm/graphify-update` run after code
       changes (see §7)
+- [ ] Conditional loop respected — on any failed check: fix, then re-run
+      starting from the first failed check; no check skipped, and none
+      reported as passed without being run
+- [ ] Session log updated — `bin/session_<YYYY-MM-DD>.md` contains the
+      commands + results for this task
 - [ ] Checks reported with commands + results; CI-only checks flagged
 - [ ] Nothing committed — commits happen only when explicitly asked
 - [ ] Nothing pushed — `git push` is **denied** in every session, no exceptions
@@ -126,23 +161,31 @@ docs at `graphify-out/graph.json`. `graphify-out/` is not tracked (excluded via
 or updated (stale):
 
 - `graphify-out/graph.json` missing → build it: the full `/graphify` skill
-  pipeline (Steps 1-9), or `bin/graphify-refresh` if `graphify-out/cache/`
+  pipeline (Steps 1-9), or `llm/graphify-refresh` if `graphify-out/cache/`
   exists.
-- Graph exists but older than the current code → `bin/graphify-update` first.
+- Graph exists but older than the current code → `llm/graphify-update` first.
+
+**Running the graph tools:** they may be unrunnable in a given environment
+(no CLI installed, no API key, long runtime). Never run a create/update
+silently — **ask the user whether they can run it**; if yes, hand them the
+exact command, let them run it manually, and wait for their call-back. If
+they cannot run it, proceed with the existing graph and state its vintage
+(last update time, e.g. `stat -c %y graphify-out/graph.json`) when citing
+anything from it.
 
 **Consult it to understand dependencies before and during work; refresh it after the work is done.** Full guide:
-`llm/GRAPHIFY.md`; wrapper scripts: `bin/` (see `bin/README.md`).
+`llm/GRAPHIFY.md`; wrapper scripts: `llm/` (see `llm/README.md`).
 
 Before starting a non-trivial task, map the dependency landscape:
 
-- `bin/graphify-explain "<component>"` — what a component is and what it
+- `llm/graphify-explain "<component>"` — what a component is and what it
   connects to (its callers, callees, shared data)
-- `bin/graphify-path "A" "B"` — how two components depend on each other, hop by
+- `llm/graphify-path "A" "B"` — how two components depend on each other, hop by
   hop; the edge relations show whether the dependency is a call, a shared
   structure, or a paper-documented design link
-- `bin/graphify-query "<question>"` — dependency context around a planned change
+- `llm/graphify-query "<question>"` — dependency context around a planned change
   (which modules will be affected, which papers document them)
-- `bin/graphify-reflect` — prior Q&A feedback (preferred sources, dead ends,
+- `llm/graphify-reflect` — prior Q&A feedback (preferred sources, dead ends,
   corrections) before re-deriving known answers
 
 During work, prefer query/path/explain over raw greps for structural questions.
@@ -152,14 +195,26 @@ or the user says not to use it.
 
 After all work is done (before reporting done):
 
-1. Run `bin/graphify-update` — AST-only, free, no API key. Re-extracts changed
+1. Run `llm/graphify-update` — AST-only, free, no API key. Re-extracts changed
    code, re-merges the papers/llm graphs, re-clusters, and regenerates
    `GRAPH_REPORT.md` + `graph.html`.
-2. If `docs/` or `docs/papers/` changed, run `bin/graphify-refresh` instead —
-   it also re-extracts the semantic layer (requires `GEMINI_API_KEY`; without
-   it, it falls back to code-only and prints a warning).
+2. If `docs/` or `docs/papers/` changed, run `llm/graphify-refresh` instead —
+   it also re-extracts the paper semantic layer (requires `GEMINI_API_KEY`;
+   without it, it falls back to code-only and prints a warning). The `llm/`
+   and CMake semantic layers need no key — `llm/graphify-update` rebuilds
+   them via `llm/gen-llm-graph.py` and `llm/gen-semantic.py` (see
+   `llm/GRAPHIFY.md`, "The semantic layer").
 3. Report the refresh in the final summary, e.g. "graph updated via
-   `bin/graphify-update` → 12,511 nodes, 24,501 edges".
+   `llm/graphify-update` → 12,511 nodes, 24,501 edges".
+
+The same ask-first rule applies here: if the update/refresh cannot be run
+locally, ask the user whether they will run it manually; if not, report the
+graph as stale with its last-update time instead of skipping the mention.
+
+The graph plus its Q&A feedback (`graphify-reflect` / `save-result`) and the
+`bin/` session logs together are the project's **knowledge base** — it
+improves over time only if updates and saved results actually happen (§0,
+§6).
 
 ## 8. Build parallelism on a user PC (CNT_CPU_CORE / 2)
 
@@ -169,6 +224,44 @@ count) and use `-j<CNT_CPU_CORE / 2>` for **every** build — tests,
 performance, and "just check" alike. Never reuse `-j` values from another
 machine. How to count and the full rule: `llm/DEVELOPMENT.md` §1 (Build
 parallelism).
+
+## 9. Autonomy rules — ALWAYS DO / ASK FIRST / NEVER DO
+
+Every action falls into exactly one bucket. When unsure which bucket applies,
+treat it as ASK FIRST.
+
+**ALWAYS DO** (autopilot defaults — no confirmation needed):
+
+- Create `bin/todo_<num>.md` files first, for every task (§0)
+- Append every command + result to `bin/session_<YYYY-MM-DD>.md`
+- Run the applicable verification chain before reporting done (§5,
+  `llm/DEVELOPMENT.md` §6), with the conditional loop (§6)
+- Consult the knowledge graph before non-trivial work; `llm/graphify-update`
+  after (§7)
+- Surgical, style-matching edits; clang-format / cmake-format on changed files
+- When a task type repeats, add a fill-in template for it in `llm/templates/`
+  — the skill set grows with use
+
+**ASK FIRST** (anything with consequences — destructive, costly, one-way):
+
+- Destructive actions: deleting files or branches, `git reset` / `git rebase`,
+  dropping data, `rm` beyond your own scratch files in `bin/`
+- Costs: paid API calls (e.g. paper semantic extraction via
+  `graphify-refresh`), installing anything outside `.venv`, long benchmark
+  runs
+- One-way or shared decisions: `git commit`, interface/API changes, snapshot
+  regeneration not implied by the requested change, expanding the task's scope
+- Ambiguity: multiple interpretations or low certainty — asking is mandatory
+  (§1), never guess
+
+**NEVER DO** (lines that don't get crossed):
+
+- `git push` — denied in every session, no exceptions (§6)
+- Hand-editing generated files: example snapshots (regenerate via
+  `--snapshot-update`), `llm/requirements.txt` (regenerate via `pip freeze`),
+  `graphify-out/*` (regenerated by the graphify tools)
+- Committing or printing secrets (API keys, tokens)
+- Reporting an unrun check as passed
 
 ---
 

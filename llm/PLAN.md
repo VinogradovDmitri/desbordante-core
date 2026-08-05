@@ -37,7 +37,10 @@ There is no "too small" exemption: every task is tracked in a todo file.
   2. Run the verification pass from `llm/DEVELOPMENT.md` §6 (build, targeted
      `ctest -R`, example `pytest`, clang-format, cmake-format) and report the
      commands + results.
-  3. Only then start `bin/todo_<num+1>.md`.
+  3. **Conditional loop:** if any check fails, stay in the current phase —
+     fix, then re-run starting from the first failed check. Never start the
+     next phase with a failing or unrun check.
+  4. Only then start `bin/todo_<num+1>.md`.
 - After a phase is successfully implemented, **delete its `bin/todo_<num>.md`**
   file. `bin/` is untracked (see `.git/info/exclude`), so todo files never enter the
   repo and are purely working-tool state.
@@ -123,4 +126,7 @@ Notes:
   `scaling_available_frequencies` closest to half of the max and use it.
 - Compare runs only when both were taken under the same protocol on the same
   machine state. Record raw numbers (e.g. the `perf stat` time) in the todo
-  file next to the expected improvement.
+  file next to the expected improvement, and append them — together with the
+  machine state (governor, pinned frequency, isolated cores, ASLR off) — to
+  `bin/measurements_<YYYY-MM-DD>.md`, so numbers stay comparable across
+  sessions.

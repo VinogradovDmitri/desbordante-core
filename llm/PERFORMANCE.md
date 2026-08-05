@@ -68,6 +68,10 @@ The #1 lesson: profiling is the first step, not a last resort. The GFD-mining
 
 ### Recording rules
 
+- [ ] Record every measurement in `bin/measurements_<YYYY-MM-DD>.md` together
+      with the machine state (governor, pinned frequency, isolated cores) —
+      numbers are comparable only within the same protocol state
+      (`llm/PLAN.md` §5).
 - [ ] **If you use `perf record`, use `-F 99` (99 Hz sampling) — or don't
       record at all.** Algorithms can run 10+ minutes; the default sampling
       rate makes `perf.data` grow to gigabytes. Use `perf stat -ddd`

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ ! -f graphify-out/graph.json ]; then
+    echo "ERROR: graphify-out/graph.json not found. Build the graph first (see llm/GRAPHIFY.md)." >&2
+    exit 1
+fi
+
+exec graphify path "$@"

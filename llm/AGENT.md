@@ -43,6 +43,9 @@ correct `CXXFLAGS`/`LDFLAGS` (stdlib/ABI compatibility).
 
 ## Review workflow (step-by-step)
 
+Use `llm/templates/review-algorithm.md` as the working document — copy it and
+fill it in while following these steps:
+
 1. Establish scope (section above): list the exact files touched by the algorithm.
 2. Read the referenced paper(s) in `docs/papers/` (or the example header) so
    correctness can be judged against the primitive's definition.
@@ -109,5 +112,8 @@ Rules for reporting:
 
 - Ask at least one question before concluding a review if anything is
   ambiguous — open questions are expected, not a failure.
+- If you cannot verify a finding, mark it **Needs-info** instead of asserting
+  it — an uncertain claim reported as fact breaks the review's
+  reproducibility.
 - Ask more rather than less (more is recommended); see `llm/CLAUDE.md` for the
   general ask-first policy.

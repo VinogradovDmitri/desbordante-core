@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PY=$(cat graphify-out/.graphify_python 2>/dev/null || command -v python3)
+
+if [ ! -f graphify-out/graph.json ]; then
+    echo "ERROR: graphify-out/graph.json not found. Build the graph first (see llm/GRAPHIFY.md)." >&2
+    exit 1
+fi
+
+SPEC="${GRAPHIFY_SPEC:-$HOME/.claude/skills/graphify/references/extraction-spec.md}"
+export GRAPHIFY_SPEC="$SPEC"
+
+"$PY" <<'PYEOF'
+import json, os, sys, multiprocessing
+from pathlib import Path
+# The main module is stdin here; Python 3.14's default forkserver start method
+# cannot re-import it, so extraction's ProcessPoolExecutor crashes. Force fork.
+multiprocessing.set_start_method('fork', force=True)
+from graphify.detect import detect
+from graphify.extract import collect_files, extract
+from graphify.cache import check_semantic_cache
+from graphify.build import build_from_json
+from graphify.cluster import cluster
+from graphify.export import to_json
+
+out = Path('graphify-out')
+d = detect(Path('src'))
+code_files = []
+for f in d.get('files', {}).get('code', []):
+    code_files.extend(collect_files(Path(f)) if Path(f).is_dir() else [Path(f)])
+
+result = extract(code_files, cache_root=Path('src'))
+result = dict(result)
+
+spec = os.environ.get('GRAPHIFY_SPEC')
+if spec and Path(spec).exists():
+    sem_files = [f for cat in ('document', 'paper', 'image') for f in d['files'].get(cat, [])]
+    c_nodes, c_edges, c_hyperedges, _ = check_semantic_cache(sem_files, root='src', prompt_file=spec)
+    seen = {n['id'] for n in result['nodes']}
+    for n in c_nodes:
+        if n['id'] not in seen:
+            result['nodes'].append(n)
+            seen.add(n['id'])
+    result['edges'] = result['edges'] + c_edges
+    result['hyperedges'] = result.get('hyperedges', []) + c_hyperedges
+else:
+    print('WARNING: extraction spec not found - semantic (CMake) nodes excluded from rebuild.', file=sys.stderr)
+
+G = build_from_json(result, root='src', directed=False)
+if G.number_of_nodes() == 0:
+    print('ERROR: src graph is empty after re-extraction.', file=sys.stderr)
+    sys.exit(1)
+communities = cluster(G)
+if not to_json(G, communities, str(out / 'src-graph.json')):
+    print('ERROR: refused to shrink graphify-out/src-graph.json (existing graph has more nodes).', file=sys.stderr)
+    sys.exit(1)
+print(f'Re-extracted src: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges')
+PYEOF
+
+if [ -f llm/gen-semantic.py ]; then
+    "$PY" llm/gen-semantic.py
+fi
+
+graphify merge-graphs graphify-out/src-graph.json graphify-out/docs-graph.json graphify-out/llm-graph.json --out graphify-out/graph.json
+
+"$PY" <<'PYEOF'
+import json
+from pathlib import Path
+
+# Inject the agent-built semantic layer (src-semantic.json): CMake target
+# nodes and conceptual edges that the AST extraction cannot see (PUBLIC links,
+# aggregator libraries). Regenerate it with gen_semantic.py (see GRAPHIFY.md).
+spath = Path('graphify-out/src-semantic.json')
+if not spath.exists():
+    print('NOTE: src-semantic.json not found - skipping semantic injection.', file=sys.stderr)
+else:
+    sem = json.loads(spath.read_text(encoding='utf-8'))
+    gpath = Path('graphify-out/graph.json')
+    g = json.loads(gpath.read_text(encoding='utf-8'))
+    known = {n['id'] for n in g['nodes']}
+    added_nodes = [n for n in sem['nodes'] if n['id'] not in known]
+    g['nodes'] = g['nodes'] + added_nodes
+    existing = {(e['source'], e['target']) for e in g['links']}
+    added_links = [e for e in sem['links'] if (e['source'], e['target']) not in existing]
+    g['links'] = g['links'] + added_links
+    gpath.write_text(json.dumps(g, ensure_ascii=False), encoding='utf-8')
+    print(f'Semantic injection: {len(added_nodes)} nodes, {len(added_links)} edges added')
+PYEOF
+
+"$PY" <<'PYEOF'
+import json, re
+from pathlib import Path
+
+gpath = Path('graphify-out/graph.json')
+g = json.loads(gpath.read_text(encoding='utf-8'))
+
+def norm(s):
+    return re.sub(r'[^a-z0-9]+', '_', s.lower()).strip('_')
+
+papers = [n for n in g['nodes'] if n.get('file_type') == 'paper']
+code = [n for n in g['nodes'] if n.get('file_type') == 'code']
+
+code_segs = {}
+for n in code:
+    sf = n.get('source_file') or ''
+    for seg in sf.split('/'):
+        s = norm(seg)
+        if s:
+            code_segs.setdefault(s, []).append(n)
+code_stripped = {}
+for s, ns in code_segs.items():
+    code_stripped.setdefault(s.replace('_', ''), []).extend(ns)
+
+existing = {(e['source'], e['target']) for e in g['links']}
+added = []
+for p in papers:
+    base = (p.get('source_file') or p.get('label') or '').rsplit('/', 1)[-1]
+    stem = norm(re.split(r'\s+-\s+', base)[0])
+    first = stem.split('_')[0]
+    variants = {stem, stem.replace('_', ''), first, first.replace('_', '')}
+    targets = set()
+    for v in variants:
+        targets.update(t['id'] for t in code_segs.get(v, []))
+        targets.update(t['id'] for t in code_stripped.get(v, []))
+    for tid in sorted(targets)[:15]:
+        if (p['id'], tid) not in existing:
+            added.append({
+                'relation': 'semantically_similar_to',
+                'confidence': 'INFERRED',
+                'confidence_score': 0.85,
+                'source_file': p.get('source_file'),
+                'source_location': None,
+                'weight': 1.0,
+                '_origin': 'paper-code-bridge',
+                'source': p['id'],
+                'target': tid,
+            })
+g['links'] = g['links'] + added
+gpath.write_text(json.dumps(g, ensure_ascii=False), encoding='utf-8')
+print(f'Paper-code bridges: {len(added)} edges applied')
+PYEOF
+
+"$PY" <<'PYEOF'
+import json, sys
+from pathlib import Path
+from networkx.readwrite import json_graph
+from graphify.cluster import cluster, score_all
+from graphify.analyze import god_nodes, surprising_connections, suggest_questions
+from graphify.report import generate
+
+out = Path('graphify-out')
+raw = json.loads((out / 'graph.json').read_text(encoding='utf-8'))
+raw['edges'] = raw.pop('links')
+G = json_graph.node_link_graph(raw, directed=False, multigraph=False)
+communities = cluster(G)
+cohesion = score_all(G, communities)
+gods = god_nodes(G)
+surprises = surprising_connections(G, communities)
+
+saved = json.loads((out / '.graphify_labels.json').read_text(encoding='utf-8')) if (out / '.graphify_labels.json').exists() else {}
+labels = {int(k): v for k, v in saved.items()}
+labels = {cid: labels.get(cid, labels.get(str(cid), 'Community ' + str(cid))) for cid in communities}
+questions = suggest_questions(G, communities, labels)
+
+for node in raw['nodes']:
+    node['community'] = communities.get(node['id'])
+
+detection = {'total_files': len(raw['nodes']), 'total_words': 0, 'files': {'code': []}, 'scan_root': str(Path.cwd())}
+report = generate(G, communities, cohesion, labels, gods, surprises, detection, {'input': 0, 'output': 0}, '.', suggested_questions=questions)
+(out / 'GRAPH_REPORT.md').write_text(report, encoding='utf-8')
+(out / '.graphify_analysis.json').write_text(json.dumps({
+    'communities': {str(k): v for k, v in communities.items()},
+    'cohesion': {str(k): str(v) for k, v in cohesion.items()},
+    'gods': gods,
+    'surprises': surprises,
+    'questions': questions,
+}, ensure_ascii=False), encoding='utf-8')
+(out / 'graph.json').write_text(json.dumps({'directed': False, 'multigraph': False, 'graph': {}, 'nodes': raw['nodes'], 'links': raw['edges']}, ensure_ascii=False), encoding='utf-8')
+print(f'Merged graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, {len(communities)} communities')
+PYEOF
+
+graphify export html

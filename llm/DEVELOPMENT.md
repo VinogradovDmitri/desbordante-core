@@ -37,8 +37,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # or: sudo snap install uv, pi
 uv --version
 ```
 
-`uv` is used for fast venv/pip operations and for the graphify CLI
-(`uv tool install graphifyy`, see `llm/GRAPHIFY.md`).
+`uv` is used for fast venv/pip operations and for the graphify CLI — install
+it now (the knowledge-graph tooling is dead without it, see `llm/GRAPHIFY.md`):
+
+```sh
+uv tool install graphifyy
+graphify --version
+```
 
 ### 0.3 Create the venv
 
@@ -81,6 +86,7 @@ uv pip install uv                       # uv inside the venv (optional)
 .venv/bin/clang-format --version
 .venv/bin/cmake-format --version
 uv --version
+graphify --version
 ```
 
 ## 1. Building
@@ -350,6 +356,10 @@ official measurement protocol in `llm/PLAN.md` §5.
 For any code change, verify before stopping. Each check must be reported with
 its command and result; checks that cannot be run locally (clang-tidy, typos)
 must be reported as "not run locally — CI-only", never as passed.
+
+**Conditional loop:** if a check fails, fix and re-run starting from the
+first failed check — never skip a check. Record every command + result in
+`bin/session_<YYYY-MM-DD>.md` (see `llm/CLAUDE.md` §0).
 
 ```bash
 # 1. Rebuild with the same flags used before the change
