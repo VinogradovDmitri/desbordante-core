@@ -45,8 +45,7 @@ bool LevenshteinSatisfies(std::string const& a, std::string const& b, double min
     double const max_len = static_cast<double>(std::max(n, m));
     if (min_sim <= 0.0) return true;  // any non-empty pair has similarity > 0
     if (min_sim > 1.0) return false;
-    unsigned const max_dist =
-            static_cast<unsigned>(std::ceil((1.0 - min_sim) * max_len));
+    unsigned const max_dist = static_cast<unsigned>(std::ceil((1.0 - min_sim) * max_len));
     unsigned const dist = util::LevenshteinDistance(a, b, max_dist);
     if (dist > max_dist) return false;
     return (1.0 - static_cast<double>(dist) / max_len) >= min_sim;
@@ -60,12 +59,16 @@ std::shared_ptr<SimilarityMetric> LevenshteinMetric() {
     class LevenshteinSim final : public FunctionSimilarityMetric {
     public:
         LevenshteinSim() : FunctionSimilarityMetric(&LevenshteinSimilarity) {}
-        bool IsExactSimilarity() const override { return true; }
-        bool Satisfies(std::string const& a, std::string const& b,
-                       double min_sim) const override {
+
+        bool IsExactSimilarity() const override {
+            return true;
+        }
+
+        bool Satisfies(std::string const& a, std::string const& b, double min_sim) const override {
             return LevenshteinSatisfies(a, b, min_sim);
         }
     };
+
     return std::make_shared<LevenshteinSim>();
 }
 
@@ -75,12 +78,19 @@ std::shared_ptr<SimilarityMetric> EqualityMetric() {
     class EqualitySim final : public FunctionSimilarityMetric {
     public:
         EqualitySim()
-            : FunctionSimilarityMetric(
-                      [](std::string const& a, std::string const& b) { return a == b ? 1.0 : 0.0; }) {
+            : FunctionSimilarityMetric([](std::string const& a, std::string const& b) {
+                  return a == b ? 1.0 : 0.0;
+              }) {}
+
+        bool IsEquality() const override {
+            return true;
         }
-        bool IsEquality() const override { return true; }
-        bool IsExactSimilarity() const override { return true; }
+
+        bool IsExactSimilarity() const override {
+            return true;
+        }
     };
+
     return std::make_shared<EqualitySim>();
 }
 
@@ -102,8 +112,15 @@ std::shared_ptr<SimilarityMetric> AbsoluteDifferenceMetric() {
                       return 0.0;
                   }
               }) {}
-        bool IsNumeric() const override { return true; }
-        bool IsExactSimilarity() const override { return true; }
+
+        bool IsNumeric() const override {
+            return true;
+        }
+
+        bool IsExactSimilarity() const override {
+            return true;
+        }
+
         bool NumericSatisfies(double x, double y, double min_sim) const override {
             // Unparseable cells yield 0.0 from Compare (see the string lambda
             // above), so NaN must map to the same 0.0 >= min_sim result.
@@ -115,6 +132,7 @@ std::shared_ptr<SimilarityMetric> AbsoluteDifferenceMetric() {
             return std::max(0.0, similarity) >= min_sim;
         }
     };
+
     return std::make_shared<AbsDiffSim>();
 }
 
@@ -132,7 +150,11 @@ std::shared_ptr<SimilarityMetric> AbsoluteThresholdMetric(double diff) {
                   }
               }),
               diff_(d) {}
-        bool IsNumeric() const override { return true; }
+
+        bool IsNumeric() const override {
+            return true;
+        }
+
         bool NumericSatisfies(double x, double y, double min_sim) const override {
             // Unparseable cells yield 0.0 from Compare, so NaN maps to 0.0 >= min_sim.
             if (std::isnan(x) || std::isnan(y)) return 0.0 >= min_sim;
@@ -143,6 +165,7 @@ std::shared_ptr<SimilarityMetric> AbsoluteThresholdMetric(double diff) {
     private:
         double diff_;
     };
+
     return std::make_shared<AbsThresholdSim>(diff);
 }
 

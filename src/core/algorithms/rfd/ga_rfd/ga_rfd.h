@@ -74,9 +74,10 @@ struct HugePageAllocator {
         using other = HugePageAllocator<U>;
     };
 
-    bool operator==(HugePageAllocator const&) const noexcept { return true; }
+    bool operator==(HugePageAllocator const&) const noexcept {
+        return true;
+    }
 };
-
 
 
 class GaRfd final : public algos::Algorithm {

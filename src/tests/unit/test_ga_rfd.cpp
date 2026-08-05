@@ -265,8 +265,8 @@ TEST(GARfdOperators, ZeroCrossoverAndMutation) {
 }
 
 TEST(GARfdRng, AllEnginesReproducibleWithSameSeed) {
-    for (auto engine : {rfd::RngEngine::kMt19937, rfd::RngEngine::kPcg32,
-                        rfd::RngEngine::kXoshiro256}) {
+    for (auto engine :
+         {rfd::RngEngine::kMt19937, rfd::RngEngine::kPcg32, rfd::RngEngine::kXoshiro256}) {
         auto metrics = EqualityMetrics(5);
         auto params1 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
         auto params2 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
@@ -288,8 +288,8 @@ TEST(GARfdRng, AllEnginesReproducibleWithSameSeed) {
 }
 
 TEST(GARfdRng, DifferentEnginesFindValidRfds) {
-    for (auto engine : {rfd::RngEngine::kMt19937, rfd::RngEngine::kPcg32,
-                        rfd::RngEngine::kXoshiro256}) {
+    for (auto engine :
+         {rfd::RngEngine::kMt19937, rfd::RngEngine::kPcg32, rfd::RngEngine::kXoshiro256}) {
         auto metrics = EqualityMetrics(5);
         auto params = MakeParams(kIris, 0.0, 0.5, 30, 3, metrics);
         params[config_names::kRngEngine] = engine;

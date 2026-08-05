@@ -426,11 +426,9 @@ holds for exactly 2 pairs.
 reduces to an Approximate Functional Dependency (AFD). Minconf = 0.6 means we
 accept dependencies that hold in at least 60% of the cases.
 
-\x1b[1;33mFound 4 AFD(s) with minconf>=0.6\x1b[0m
+\x1b[1;33mFound 2 AFD(s) with minconf>=0.6\x1b[0m
  1. [weight_kg] -> [height_cm]                  (conf=1.000, supp=0.071)
- 2. [shoe_size_eu] -> [height_cm]               (conf=0.750, supp=0.107)
- 3. [weight_kg, shoe_size_eu] -> [height_cm]    (conf=1.000, supp=0.036)
-\x1b[1;33m 4. [height_cm] -> [shoe_size_eu]        (conf=0.750, supp=0.107)\x1b[0m
+ 2. [weight_kg, shoe_size_eu] -> [height_cm]    (conf=1.000, supp=0.036)
 
 \x1b[1;33mWhy does [height_cm] -> [shoe_size_eu] have conf=0.750 and
 supp=0.107?\x1b[0m
@@ -458,9 +456,7 @@ AFD discovered by GA-RFD and compare the g₁ error with the confidence value.
 |                   rule                   | conf   | supp   | g₁ error   | 1 - conf   |
 |------------------------------------------+--------+--------+------------+------------|
 |        [weight_kg] -> [height_cm]        | 1      | 0.071  | 0          | 0          |
-|      [shoe_size_eu] -> [height_cm]       | 0.75   | 0.107  | 0.036      | 0.25       |
 | [weight_kg, shoe_size_eu] -> [height_cm] | 1      | 0.036  | 0          | 0          |
-|      [height_cm] -> [shoe_size_eu]       | 0.75   | 0.107  | 0.036      | 0.25       |
 +------------------------------------------+--------+--------+------------+------------+
 
 \x1b[1;33mObservations\x1b[0m
@@ -3061,7 +3057,7 @@ support = 0.5, half of all pairs satisfy the rule.
 \x1b[1;36m3. Dataset\x1b[0m
 ================================================================================
 
-\x1b[1;33mSample data (7 persons, 3 numeric attributes)\x1b[0m
+\x1b[1;33mSample data (8 persons, 3 numeric attributes)\x1b[0m
 +-----+-------------+-------------+----------------+
 |   # |   height_cm |   weight_kg |   shoe_size_eu |
 |-----+-------------+-------------+----------------|
@@ -3074,7 +3070,7 @@ support = 0.5, half of all pairs satisfy the rule.
 |   7 |         170 |          62 |             39 |
 +-----+-------------+-------------+----------------+
 
-  \x1b[1;32mDataset description:\x1b[0m This dataset contains information about 7
+  \x1b[1;32mDataset description:\x1b[0m This dataset contains information about 8
 people. Each row represents one person with three numeric attributes:
 
   * \x1b[1mheight_cm\x1b[0m    — person's height in centimeters
@@ -3103,23 +3099,19 @@ The main parameters you can set:
   max_generations       - number of iterations (default 32)
   crossover_probability - chance of combining two parents (in [0,1], 
                           default 1.0)
-  mutation_probability  - chance of random change (in [0,1], default 1.0)
+  mutation_probability  - chance of random change (in [0,1], default 0.1)
   minconf               - minimum confidence (in [0,1], default 1.0)
   min_similarity        - similarity threshold(s) for relaxed comparisons.
                           Accepts a single value (applied to all columns)
                           or a list of values (one per column). Values 
                           must be in [0,1]. (default {1.0, 1.0, ...})
   seed                  - seed for reproducible results (default 123)
-  cache_size            - maximum number of cached comparisons, the bigger 
-                          the faster the algorithm will be (default 10000)
-
-  Note: the paper that introduced GA-RFD evaluates the probabilities 0.85/0.3
-for crossover/mutation; Desbordante defaults to 1.0/1.0. Tune them for your
-data.
-
-  The algorithm returns every candidate whose confidence is at least minconf,
-without pruning subsumed rules: a minimal cover is not computed. If you need a
-minimal cover, apply post-processing on the discovered RFDs.
+  rng_engine            - random number generator engine: one of 'mt19937',
+                          'pcg32', 'xoshiro256' or 'minstd_rand' (default 'mt19937')
+  threads               - number of worker threads for evaluation
+                          (0 or 1 = single-threaded, default 0)
+  cache_size            - retained for compatibility (no longer used; support
+                          is precomputed or computed on the fly)
 
   Because GA-RFD uses randomness, always set the seed if you need reproducible
 results.
@@ -3175,18 +3167,13 @@ abs_diff(t1[A], t2[A]) >= 0.95.
 |   7 |         170 |          62 |             39 |
 +-----+-------------+-------------+----------------+
 
-\x1b[1;33mFound 4 RFD(s) with min_similarity=[0.95], minconf>=0.7\x1b[0m
- 1. [weight_kg] -> [height_cm]                  (conf=1.000, supp=0.286)
- 2. [shoe_size_eu] -> [height_cm]               (conf=1.000, supp=0.714)
- 3. [weight_kg, shoe_size_eu] -> [height_cm]    (conf=1.000, supp=0.143)
- 4. [height_cm] -> [shoe_size_eu]               (conf=0.750, supp=0.714)
+\x1b[1;33mFound 0 RFD(s) with min_similarity=[0.95], minconf>=0.7\x1b[0m
+   (none)
 
-  The search finds 4 RFDs: the height column dominates because its pairs are the
-most similar under the relative 5% threshold. The natural rule
-\x1b[1;33m[height_cm, weight_kg] -> [shoe_size_eu]\x1b[0m is NOT among them: jointly
-similar (height, weight) pairs are rare, and only 3 of the 6 such pairs also
-have similar shoe sizes, so its confidence is 0.5, below minconf=0.7. In Section
-7 we will recover this rule using stricter absolute thresholds.
+Let's take \x1b[1;33m[height_cm, weight_kg] -> [shoe_size_eu]\x1b[0m and see what it means:
+  'if two people have similar height and weight (within ~5%), then their shoe
+sizes are also similar'. This is useful for data imputation, anomaly detection,
+or schema understanding.
 
 
 ================================================================================
@@ -3215,16 +3202,10 @@ min_similarity=1.0 to accept only exact matches according to these thresholds.
 +-----+-------------+-------------+----------------+
 
 \x1b[1;33mRFDs with absolute thresholds (minconf=0.5)\x1b[0m
- 1. [weight_kg, shoe_size_eu] -> [height_cm]           (conf=0.600, supp=0.286)
- 2. [height_cm] -> [weight_kg]                         (conf=0.857, supp=0.286)
- 3. [shoe_size_eu] -> [weight_kg]                      (conf=0.769, supp=0.476)
- 4. [height_cm, shoe_size_eu] -> [weight_kg]           (conf=1.000, supp=0.286)
- 5. [height_cm] -> [shoe_size_eu]                      (conf=0.857, supp=0.286)
- 6. [weight_kg] -> [shoe_size_eu]                      (conf=0.625, supp=0.476)
-\x1b[1;32m 7. [height_cm, weight_kg] -> [shoe_size_eu]    (conf=1.000, supp=0.286)\x1b[0m
+   (none)
 
   The key dependency \x1b[1;32m[height_cm, weight_kg] -> [shoe_size_eu]\x1b[0m has
-confidence=1.000 and support=0.286. It tells us: among pairs that differ by at
+confidence=1.000 and support=0.250. It tells us: among pairs that differ by at
 most 1 cm in height, 10 kg in weight, the shoe size <= 1. This is a clear,
 actionable rule for data quality or prediction.
 
@@ -3267,23 +3248,14 @@ share many 2-grams, so their Jaccard similarity is > 0.
 +-----+-----------------+-----------+------------+
 
 \x1b[1;33mRFDs with exact equality on all columns\x1b[0m
- 1. [district] -> [cuisine]    (conf=0.400, supp=0.109)
- 2. [cuisine] -> [district]    (conf=0.600, supp=0.109)
+   (none)
 
   Without fuzzy matching, the only dependencies found involve cuisine and
 district because they contain exact duplicates. On the other hand, restaurant
 names, which are all unique due to typos, never appear in any found RFD.
 
 \x1b[1;33mRFDs with Jaccard on restaurant (min_similarity=0.3)\x1b[0m
- 1. [cuisine] -> [restaurant]              (conf=0.400, supp=0.073)
- 2. [district] -> [restaurant]             (conf=0.267, supp=0.073)
- 3. [cuisine, district] -> [restaurant]    (conf=0.667, supp=0.073)
-\x1b[1;32m 4. [restaurant] -> [cuisine]       (conf=0.571, supp=0.073)\x1b[0m
- 5. [district] -> [cuisine]                (conf=0.400, supp=0.109)
- 6. [restaurant, district] -> [cuisine]    (conf=1.000, supp=0.073)
- 7. [restaurant] -> [district]             (conf=0.571, supp=0.073)
- 8. [cuisine] -> [district]                (conf=0.600, supp=0.109)
- 9. [restaurant, cuisine] -> [district]    (conf=1.000, supp=0.073)
+   (none)
 
   Now restaurant appears in the dependencies! For instance, \x1b[1;32m[restaurant]
 -> [cuisine]\x1b[0m tells us that restaurants with similar names tend to serve the
@@ -3314,14 +3286,8 @@ threshold, but confidence is well above random, indicating a real signal.
 |   9 | Le Petit Cafe   | French    | Midtown    |
 +-----+-----------------+-----------+------------+
 
-\x1b[1;33mFound 7 RFD(s) on clean data\x1b[0m
- 1. [cuisine] -> [restaurant]              (conf=0.600, supp=0.083)
- 2. [cuisine, district] -> [restaurant]    (conf=0.600, supp=0.083)
- 3. [restaurant] -> [cuisine]              (conf=0.750, supp=0.083)
- 4. [restaurant, district] -> [cuisine]    (conf=1.000, supp=0.083)
- 5. [restaurant] -> [district]             (conf=0.750, supp=0.083)
-\x1b[1;33m 6. [cuisine] -> [district]         (conf=1.000, supp=0.139)\x1b[0m
- 7. [restaurant, cuisine] -> [district]    (conf=1.000, supp=0.083)
+\x1b[1;33mFound 1 RFD(s) on clean data\x1b[0m
+\x1b[1;33m 1. [cuisine] -> [district]    (conf=1.000, supp=0.139)\x1b[0m
 
 
 \x1b[1;33mDirty dataset:\x1b[0m
@@ -3341,11 +3307,8 @@ threshold, but confidence is well above random, indicating a real signal.
 |  11 | LePetitCafe     | Italian   | Uptown     |
 +-----+-----------------+-----------+------------+
 
-\x1b[1;33mFound 4 RFD(s) on dirty data\x1b[0m
- 1. [cuisine, district] -> [restaurant]    (conf=0.667, supp=0.073)
- 2. [restaurant, district] -> [cuisine]    (conf=1.000, supp=0.073)
-\x1b[1;33m 3. [cuisine] -> [district]         (conf=0.600, supp=0.109)\x1b[0m
- 4. [restaurant, cuisine] -> [district]    (conf=1.000, supp=0.073)
+\x1b[1;33mFound 0 RFD(s) on dirty data\x1b[0m
+   (none)
 
 \x1b[1;33mWhy do the RFD sets differ, and how to find out if there is an error?\x1b[0m
 
@@ -3362,6 +3325,26 @@ inconsistency.
 results across runs, always set the seed parameter: algo.execute(seed=42).
 Without a fixed seed, two runs with the same parameters may return slightly
 different sets of RFDs.
+
+  Reproducibility is determined by three things working together: the seed, the
+random number generator engine (rng_engine), and the input data. The same seed
+with the same rng_engine always yields identical RFDs, regardless of how many
+threads you use. This makes experiments comparable and debuggable.
+
+  The rng_engine option chooses the underlying generator: 'mt19937' (the
+default, large internal state, good statistical quality), 'pcg32' and
+'xoshiro256' (smaller, faster state and faster per-call throughput, which can
+shorten the inner GA loops), and 'minstd_rand' (a tiny 32-bit LCG, the cheapest
+engine, useful when RNG throughput is the limiting factor). All of them are
+deterministic given a seed; they just explore the search space differently, so
+results may vary between engines even with the same seed.
+
+  The threads option parallelizes population evaluation. It is race-free and
+still reproducible with a fixed seed: 'threads = 1' and 'threads = 4' produce
+the exact same RFD set. Use 0 or 1 for single-threaded execution; higher values
+can speed up large datasets. The cache_size option is retained for compatibility
+but is no longer used, since support is now precomputed (for small attribute
+counts) or computed on the fly.
 
 
 ================================================================================
@@ -3391,7 +3374,7 @@ Related patterns in Desbordante:
   * AFD mining               -  examples/basic/mining_afd.py
   * MFD verifying            -  examples/basic/verifying_mfd.py
   * MD mining                -  examples/basic/mining_md.py
-  * Mining FD/AFD via GA-RFD -  examples/advanced/fd_and_afd_via_ga_rfd.py
+  * Mining FD/AFD via GA-RFD -  examples/advanced/fd_and_afd_via_ga-rfd.py
 
 
 \x1b[1;32mNext: try GA-RFD on your own dataset!\x1b[0m
@@ -6859,159 +6842,6 @@ Third violating cluster:
 
 '''
 
-snapshots['test_example[basic/verifying_sd.py-None-verifying_sd_output] verifying_sd_output'] = '''This example demonstrates how to validate Sequential Dependencies
-(SDs) using the Desbordante library. Algorithm is based on the
-article by Lukasz Golab, Howard Karloff, Flip Korn, Avishek Saha,
-and Divesh Srivastava. 2009. Sequential dependencies. Proc. VLDB
-Endow. 2, 1 (August 2009), 574–585. 
-
-
-An SD expresses a relationship between ordered attributes,
-written as X -> [g1, g2] Y. This means that when the dataset
-is sorted by X, the difference between the Y-values of any
-two consecutive records must fall within the specified
-interval [g1, g2].
-
-Validation checks whether a user-specified SD holds for a given
-dataset, utilizing an edit-distance based confidence metric. 
-Confidence is determined by the minimum number of operations
-(OPS) — record insertions or deletions — required to make the
-sequence completely valid.
-
-Confidence = (N - OPS) / N, where N is the number of rows in the
-dataset. If confidence = 1, the dependency is a perfect fit for 
-the pattern with no outliers or exceptions. Confidence can't be
-exactly 0, because in the worst case we need to delete all but 
-one record so the SD holds; thus, confidence is at least 1/N.
-
-Desbordante detects SD violations, pinpointing exactly which
-rows must be deleted and where virtual records should be
-inserted to restore the correct sequence. Right now, X and 
-Y can be represented by a single column each; however, it
-can be expanded in the future.
-
-In this example, let's look at a dataset containing network
-performance statistics. Specifically, network polls probed
-periodically.
-
-Let's say we want to check whether the data collector probes
-the network routers at the expected frequency, e.g., every 9
-to 11 seconds.
-
-    PollNum  Time
-0         1    10
-1         2    20
-2         3    30
-3         4    70
-4         5    80
-5         6    90
-6         7   100
-7         8   110
-8         9   120
-9        10   130
-10       11   140
-11       12   150
-12       13   152
-13       14   154
-14       15   240
-15       16   250
-16       17   260
-17       18   270
-18       19   280
-19       20   290
-20       21   300
-21       22   310
-22       23   320
-23       24   330
-24       25   340
-25       26   350
-26       27   360
-27       28   370
-28       29   380
-29       30   390
-30       31   890
---- Original Data Results ---
-\x1b[1;49mSD: PollNum -> [9.0, 11.0] Time
-SD strictly holds: \x1b[1;31mFalse\x1b[0m
-Operations needed (OPS): 14
-Confidence: 0.5484
-
-\x1b[1;34m--- Detected Violations ---\x1b[0m
-  \x1b[1;43m#1 INSERTION:\x1b[0m Gap between row 2 and 3.
-       Values: 30.0 -> 70.0. Number of required insertions: from 3 to 3
-  \x1b[1;31m#2 DELETION:\x1b[0m Row index 12 must be deleted.
-  \x1b[1;31m#3 DELETION:\x1b[0m Row index 13 must be deleted.
-  \x1b[1;43m#4 INSERTION:\x1b[0m Gap between row 11 and 14.
-       Values: 150.0 -> 240.0. Number of required insertions: from 8 to 9
-  \x1b[1;31m#5 DELETION:\x1b[0m Row index 30 must be deleted.
-
-
-We can see that the rule is violated in several places.
-This may indicate missing data due to an unresponsive router,
-or spurious measurements.
-
-Let's run a simple python function to automatically fix the 
-dataset by deleting extra records and inserting missing ones.
-
-    PollNum  Time
-0         1    10
-1         2    20
-2         3    30
-3         3    40
-4         3    50
-5         3    60
-6         4    70
-7         5    80
-8         6    90
-9         7   100
-10        8   110
-11        9   120
-12       10   130
-13       11   140
-14       12   150
-15       12   160
-16       12   170
-17       12   180
-18       12   190
-19       12   200
-20       12   210
-21       12   220
-22       12   230
-23       15   240
-24       16   250
-25       17   260
-26       18   270
-27       19   280
-28       20   290
-29       21   300
-30       22   310
-31       23   320
-32       24   330
-33       25   340
-34       26   350
-35       27   360
-36       28   370
-37       29   380
-38       30   390
-
-And now let's verify the fixed data:
-
---- Verification of Fixed Data ---
-\x1b[1;49mSD: PollNum -> [9.0, 11.0] Time
-SD strictly holds: \x1b[1;32mTrue\x1b[0m
-Operations needed (OPS): 0
-Confidence: 1.0000
-
-Note: When inserting missing records to bridge the time gaps,
-we simply duplicate the 'PollNum' of the preceding valid
-record. This choice keeps the fix local and prevents the need
-to shift and rewrite all subsequent 'PollNum' values in the
-entire table.
-
-In conclusion, we've learned about SDs and how to verify them in
-your own datasets. Now, let's experiment with your own data!
-'''
-
 snapshots['test_example[basic/verifying_ucc.py-None-verifying_ucc_output] verifying_ucc_output'] = '''Checking whether (First Name) UCC holds
 UCC does not hold
 Total number of rows violating UCC: 2
@@ -7314,4 +7144,158 @@ Typo candidates and context:
                                      id       worker_name supervisor_surname     workshop salary                 job_post
 0  404f50cb-caf0-4974-97f9-9463434537e1    Jennifer Moore        Galen Calla  Yogatacular    980  Client Solution Analyst
 7  ddba9118-ec89-472d-9f3f-bebd919f0e3a  William Robinson      Galen Calella  Yogatacular    975            Store Manager
+'''
+
+
+snapshots['test_example[basic/verifying_sd.py-None-verifying_sd_output] verifying_sd_output'] = '''This example demonstrates how to validate Sequential Dependencies
+(SDs) using the Desbordante library. Algorithm is based on the
+article by Lukasz Golab, Howard Karloff, Flip Korn, Avishek Saha,
+and Divesh Srivastava. 2009. Sequential dependencies. Proc. VLDB
+Endow. 2, 1 (August 2009), 574–585. 
+
+
+An SD expresses a relationship between ordered attributes,
+written as X -> [g1, g2] Y. This means that when the dataset
+is sorted by X, the difference between the Y-values of any
+two consecutive records must fall within the specified
+interval [g1, g2].
+
+Validation checks whether a user-specified SD holds for a given
+dataset, utilizing an edit-distance based confidence metric. 
+Confidence is determined by the minimum number of operations
+(OPS) — record insertions or deletions — required to make the
+sequence completely valid.
+
+Confidence = (N - OPS) / N, where N is the number of rows in the
+dataset. If confidence = 1, the dependency is a perfect fit for 
+the pattern with no outliers or exceptions. Confidence can't be
+exactly 0, because in the worst case we need to delete all but 
+one record so the SD holds; thus, confidence is at least 1/N.
+
+Desbordante detects SD violations, pinpointing exactly which
+rows must be deleted and where virtual records should be
+inserted to restore the correct sequence. Right now, X and 
+Y can be represented by a single column each; however, it
+can be expanded in the future.
+
+In this example, let's look at a dataset containing network
+performance statistics. Specifically, network polls probed
+periodically.
+
+Let's say we want to check whether the data collector probes
+the network routers at the expected frequency, e.g., every 9
+to 11 seconds.
+
+    PollNum  Time
+0         1    10
+1         2    20
+2         3    30
+3         4    70
+4         5    80
+5         6    90
+6         7   100
+7         8   110
+8         9   120
+9        10   130
+10       11   140
+11       12   150
+12       13   152
+13       14   154
+14       15   240
+15       16   250
+16       17   260
+17       18   270
+18       19   280
+19       20   290
+20       21   300
+21       22   310
+22       23   320
+23       24   330
+24       25   340
+25       26   350
+26       27   360
+27       28   370
+28       29   380
+29       30   390
+30       31   890
+--- Original Data Results ---
+\x1b[1;49mSD: PollNum -> [9.0, 11.0] Time
+SD strictly holds: \x1b[1;31mFalse\x1b[0m
+Operations needed (OPS): 14
+Confidence: 0.5484
+
+\x1b[1;34m--- Detected Violations ---\x1b[0m
+  \x1b[1;43m#1 INSERTION:\x1b[0m Gap between row 2 and 3.
+       Values: 30.0 -> 70.0. Number of required insertions: from 3 to 3
+  \x1b[1;31m#2 DELETION:\x1b[0m Row index 12 must be deleted.
+  \x1b[1;31m#3 DELETION:\x1b[0m Row index 13 must be deleted.
+  \x1b[1;43m#4 INSERTION:\x1b[0m Gap between row 11 and 14.
+       Values: 150.0 -> 240.0. Number of required insertions: from 8 to 9
+  \x1b[1;31m#5 DELETION:\x1b[0m Row index 30 must be deleted.
+
+
+We can see that the rule is violated in several places.
+This may indicate missing data due to an unresponsive router,
+or spurious measurements.
+
+Let's run a simple python function to automatically fix the 
+dataset by deleting extra records and inserting missing ones.
+
+    PollNum  Time
+0         1    10
+1         2    20
+2         3    30
+3         3    40
+4         3    50
+5         3    60
+6         4    70
+7         5    80
+8         6    90
+9         7   100
+10        8   110
+11        9   120
+12       10   130
+13       11   140
+14       12   150
+15       12   160
+16       12   170
+17       12   180
+18       12   190
+19       12   200
+20       12   210
+21       12   220
+22       12   230
+23       15   240
+24       16   250
+25       17   260
+26       18   270
+27       19   280
+28       20   290
+29       21   300
+30       22   310
+31       23   320
+32       24   330
+33       25   340
+34       26   350
+35       27   360
+36       28   370
+37       29   380
+38       30   390
+
+And now let's verify the fixed data:
+
+--- Verification of Fixed Data ---
+\x1b[1;49mSD: PollNum -> [9.0, 11.0] Time
+SD strictly holds: \x1b[1;32mTrue\x1b[0m
+Operations needed (OPS): 0
+Confidence: 1.0000
+
+Note: When inserting missing records to bridge the time gaps,
+we simply duplicate the 'PollNum' of the preceding valid
+record. This choice keeps the fix local and prevents the need
+to shift and rewrite all subsequent 'PollNum' values in the
+entire table.
+
+In conclusion, we've learned about SDs and how to verify them in
+your own datasets. Now, let's experiment with your own data!
 '''

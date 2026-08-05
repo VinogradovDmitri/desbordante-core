@@ -239,7 +239,10 @@ void GaRfd::BuildEqualityBitsetRange(size_t a, size_t i0, size_t i1) {
                 size_t const q = group[qi];
                 // q > p, so the ordered pair (p, q) is the one the naive loop sets.
                 size_t const P = p * num_rows_ - p * (p + 1) / 2 + (q - p - 1);
-                bits[P >> 6] |= (static_cast<uint64_t>(1) << (P & 63));
+                // Atomic like DepositBlock: parallel row-chunks write distinct bits
+                // of the same word, so a plain `|=` would race between threads.
+                std::atomic_ref<uint64_t>(bits[P >> 6])
+                        .fetch_or(static_cast<uint64_t>(1) << (P & 63), std::memory_order::relaxed);
             }
         }
     }
@@ -250,18 +253,24 @@ namespace {
 // whose global pair index is P0 + k) into the bitset. 64 consecutive pairs span
 // at most two 64-bit words, so we shift into the first word and overflow into the
 // next when the block does not start on a word boundary.
+//
+// The writes are atomic: row-chunks of the same attribute write distinct bits but
+// share 64-bit words at the chunk boundaries (and for small datasets all chunks
+// fall into the same word), so a plain `|=` would race between threads.
 inline void DepositBlock(std::vector<uint64_t, algos::rfd::HugePageAllocator<uint64_t>>& bits,
-                          size_t P0, uint64_t w) {
+                         size_t P0, uint64_t w) {
     unsigned const r = static_cast<unsigned>(P0 & 63);
     size_t const w0 = P0 >> 6;
+    auto constexpr kRelaxed = std::memory_order::relaxed;
     if (r == 0) {
-        bits[w0] |= w;
+        std::atomic_ref<uint64_t>(bits[w0]).fetch_or(w, kRelaxed);
     } else {
-        bits[w0] |= w << r;
+        std::atomic_ref<uint64_t>(bits[w0]).fetch_or(w << r, kRelaxed);
         // The low r bits of w overflow into the next word. The highest possible pair
         // index is total-1 < bits.size()*64, so when w0 is the last word the overflow
         // portion is always zero and there is no next word to write into.
-        if (w0 + 1 < bits.size()) bits[w0 + 1] |= w >> (64 - r);
+        if (w0 + 1 < bits.size())
+            std::atomic_ref<uint64_t>(bits[w0 + 1]).fetch_or(w >> (64 - r), kRelaxed);
     }
 }
 }  // namespace
@@ -297,7 +306,8 @@ void GaRfd::BuildAttributeBitsetRange(size_t a, size_t i0, size_t i1) {
                     size_t const jmax = std::min<size_t>(j + 64, num_rows_);
                     uint64_t w = 0;
                     for (size_t k = 0; k < jmax - j; ++k) {
-                        if (metric.NumericSatisfies(vi, vals[j + k], min_sim)) w |= (uint64_t(1) << k);
+                        if (metric.NumericSatisfies(vi, vals[j + k], min_sim))
+                            w |= (uint64_t(1) << k);
                     }
                     DepositBlock(bits, P0, w);
                 }
@@ -327,8 +337,10 @@ void GaRfd::BuildAttributeBitsetRange(size_t a, size_t i0, size_t i1) {
 }
 
 void GaRfd::BuildSimilarityBitsets() {
-    LOG_INFO("BuildSimilarityBitsets: total_pairs_ = {}, num_attrs_ = {}, num_rows_ = {}, threads = {}",
-             total_pairs_, num_attrs_, num_rows_, static_cast<unsigned>(threads_));
+    LOG_INFO(
+            "BuildSimilarityBitsets: total_pairs_ = {}, num_attrs_ = {}, num_rows_ = {}, threads = "
+            "{}",
+            total_pairs_, num_attrs_, num_rows_, static_cast<unsigned>(threads_));
     std::size_t const num_uint64_per_attr = (total_pairs_ + 63) / 64;
     attr_similarity_bits_.assign(num_attrs_, AttrBits(num_uint64_per_attr, 0));
 
@@ -336,8 +348,10 @@ void GaRfd::BuildSimilarityBitsets() {
     // calls). Parallelize across BOTH attributes and rows: every (attribute x
     // row-chunk) task is submitted to a single pool, so all `threads_` workers stay
     // busy across attributes (they are no longer processed one at a time with a
-    // per-attribute barrier). Each chunk writes a contiguous, non-overlapping
-    // sub-range of attr_similarity_bits_[a], so distinct tasks are disjoint and
+    // per-attribute barrier). Each chunk writes a contiguous sub-range of
+    // attr_similarity_bits_[a]'s bits; distinct chunks never set the same bit, and
+    // the shared 64-bit words at chunk boundaries are written with atomic
+    // fetch_or (see DepositBlock / BuildEqualityBitsetRange), so the build is
     // race-free.
     auto const num_threads = threads_ > 1 ? static_cast<size_t>(threads_) : size_t{1};
     if (num_threads > 1 && num_rows_ > 1) {
@@ -367,7 +381,7 @@ void GaRfd::BuildSimilarityBitsets() {
     constexpr std::size_t kMaxPrecomputeOps = 1'000'000'000;
     std::size_t const table_size = static_cast<std::size_t>(1) << num_attrs_;
     bool const can_precompute = table_size <= (std::size_t{1} << 20) &&
-                                 table_size * num_attrs_ * words_per_attr <= kMaxPrecomputeOps;
+                                table_size * num_attrs_ * words_per_attr <= kMaxPrecomputeOps;
     if (can_precompute) {
         BuildSupportIndex();
     } else {
@@ -428,8 +442,9 @@ void GaRfd::BuildSupportIndex() {
     if (threads_ > 1 && table_size > 1) {
         std::optional<util::WorkerThreadPool> pool(threads_);
         // Index 0 is set manually above; parallelize the remaining masks [1, table_size).
-        pool->ExecIndex([&reduce_mask](model::Index m) { reduce_mask(static_cast<uint32_t>(m + 1)); },
-                        static_cast<model::Index>(table_size - 1));
+        pool->ExecIndex(
+                [&reduce_mask](model::Index m) { reduce_mask(static_cast<uint32_t>(m + 1)); },
+                static_cast<model::Index>(table_size - 1));
     } else {
         for (uint32_t mask = 1; mask < table_size; ++mask) reduce_mask(mask);
     }
@@ -631,8 +646,7 @@ GaRfd::Population GaRfd::Crossover(Population const& selected, Rng& rng) const {
     // pair evaluations only trims redundant work; it leaves small-population runs
     // (and thus existing unit-test behaviour) completely unchanged.
     constexpr std::size_t kMaxCrossoverPairs = 4'000'000;
-    std::size_t pairs_left =
-            std::min<std::size_t>(kMaxCrossoverPairs, n * (n - 1) / 2);
+    std::size_t pairs_left = std::min<std::size_t>(kMaxCrossoverPairs, n * (n - 1) / 2);
 
     std::uniform_real_distribution<double> dist01(0.0, 1.0);
     std::bernoulli_distribution coin(0.5);
