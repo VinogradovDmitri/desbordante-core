@@ -6,6 +6,9 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 
 Performance tasks: read `llm/PERFORMANCE.md` (optimization checklist) and
 `llm/PLAN.md` §5 (measurement protocol) before touching code.
+Review tasks: read `llm/AGENT.md` — reviews run in three modes (Immersion /
+Design / Performance, separately or step-by-step), and all questions are
+asked in an interview **before** the review; none are asked mid-review.
 
 ## 0. Startup checklist — do these in order, on any machine
 
@@ -20,6 +23,12 @@ Performance tasks: read `llm/PERFORMANCE.md` (optimization checklist) and
    `bin/` is the agent's state dir (untracked, per-clone): todo files,
    session logs, and measurement logs all live there, so any later session
    can replay or audit what was done.
+   **All files the agent creates live in `bin/` — no exceptions.** This
+   includes todo files, session logs, measurement logs, review reports, and
+   **every temporary / scratch file** (profiling data, dumps, notes,
+   one-off scripts, intermediate artifacts). Never save files to the opencode
+   dir, the repo root, `llm/`, `graphify-out/`, or anywhere else. If a tool
+   writes files somewhere else, copy or redirect them into `bin/`.
 3. **Environment bootstrap** (`llm/DEVELOPMENT.md` §0, fresh machine only):
    create `.venv`, install all requirements, install `uv` and
    `cmake-format`/`clang-format` — then verify.

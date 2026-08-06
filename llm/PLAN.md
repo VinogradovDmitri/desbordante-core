@@ -32,6 +32,15 @@ There is no "too small" exemption: every task is tracked in a todo file.
     individually verifiable step).
 - Follow-up tasks from the user land in the todo files too — e.g. the next
   tasks go into `bin/todo_1.md`.
+- **Performance-related tasks** get a todo file with two fixed entries: the
+  **first task is always "create a new branch for trying to implement the
+  current optimization"** (`perf/<todo-num>-<short-slug>`, §3) — the branch
+  exists before any profiling or code change — and the **penultimate task is
+  merging all new branches back into the branch where the user called the
+  session** (the perf branch plus any `joint/*` branches, conflicts resolved
+  there). The **last task is always running all tests plus `valgrind`,
+  `helgrind`, and `drd`** (full test suite + memory errors, data races,
+  deadlocks) as the final verification before reporting done (§4).
 - Execute phases **one by one**:
   1. Finish `bin/todo_<num>.md` — every checkbox checked.
   2. Run the verification pass from `llm/DEVELOPMENT.md` §6 (build, targeted
@@ -49,6 +58,9 @@ There is no "too small" exemption: every task is tracked in a todo file.
 
 - Any task that changes performance targets gets its **own branch**:
   `perf/<todo-num>-<short-slug>`, e.g. `perf/3-threaded-bitset-build`.
+- Creating this branch is the **first task in the task's todo file** (§2) —
+  it happens before profiling or any code change, so the optimization is
+  always tried on an isolated experiment branch.
 - One branch changes exactly **one type of thing** (one fast path, one
   threading change, one data structure).
 - Every performance task records its **numeric expected improvement** in the

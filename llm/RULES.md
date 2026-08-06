@@ -44,6 +44,9 @@ workflow, and output format.
 
 - [ ] Passes UB sanitizer on GCC and Clang
 - [ ] Passes Address sanitizer on GCC and Clang
+- [ ] ASan and UBSan are verified in **one combined build per compiler**
+      (`-fsanitize=address,undefined` together, `llm/DEVELOPMENT.md` §1) —
+      never two separate sanitizer builds (build time)
 - [ ] Any suppression (`no_sanitize` / ignore list) is a confirmed false positive,
       minimal in scope, with the equivalent GCC check left enabled
 
@@ -215,6 +218,11 @@ workflow, and output format.
 - [ ] Clarifying questions asked before implementation when the task is
       ambiguous or the change would touch code outside the request's scope
       (see `llm/CLAUDE.md`)
+- [ ] All files the agent creates live in `bin/` — todo files, session and
+      measurement logs, review reports, and **every temporary/scratch file**
+      (profiling data, dumps, one-off scripts, intermediate artifacts) —
+      never in the others dir, the repo root, `llm/`, or `graphify-out/`
+      (see `llm/CLAUDE.md` §0)
 
 ## 19. CI awareness — Python wheels
 

@@ -27,6 +27,9 @@
 
 ## 3. Steps (in order)
 
+- [ ] **First task: create a new branch for trying to implement this
+      optimization** — `git switch -c perf/<todo-num>-<short-slug>` (before any
+      profiling or code change; `llm/PLAN.md` §3)
 - [ ] Profile first (`llm/PERFORMANCE.md` §1); record numbers + machine state
       in `bin/measurements_<YYYY-MM-DD>.md`
 - [ ] Change one thing (`llm/PLAN.md` §3)
@@ -37,6 +40,13 @@
 - [ ] Verification chain (`llm/DEVELOPMENT.md` §6) with the conditional loop
 - [ ] Second-pass review of both the diff and the numbers (fresh pass or
       second model) → `<findings fixed / explicitly waived>`
+- [ ] **Penultimate task: merge all new branches into the branch where the
+      user called you** — bring the perf branch (and any joint branches) back
+      into the original branch, resolving conflicts there (`llm/PLAN.md` §3/§4)
+- [ ] **Last task: run all tests + `valgrind`, `helgrind`, and `drd`** — the
+      full test suite (build, `ctest`, examples + snapshots, formatting) plus
+      memory errors, data races, and deadlocks — clean before reporting done
+      (`llm/PLAN.md` §2, `llm/PERFORMANCE.md` §13, `llm/DEVELOPMENT.md` §6)
 
 ## 4. Report
 

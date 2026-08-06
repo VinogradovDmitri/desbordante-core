@@ -62,6 +62,9 @@ The #1 lesson: profiling is the first step, not a last resort. The GFD-mining
 | `objdump -d` | Verify an optimization actually landed in the generated assembly |
 | `-fopt-info-vec` (GCC) / `-Rpass=vector` (Clang) | Whether loops auto-vectorized |
 | `valgrind --tool=callgrind` + `kcachegrind` | Call counts, instruction-level costs |
+| `valgrind --tool=memcheck` | Memory errors (leaks, invalid reads/writes) |
+| `valgrind --tool=helgrind` | Data races, deadlocks (happens-before analysis) |
+| `valgrind --tool=drd` | Data races, deadlocks (lockset-based analysis) |
 | `heaptrack` / `massif` | Allocation hotspots, peak memory |
 | ASan / UBSan / MSan / LSan / TSan | Correctness: races, leaks, UB — never for benchmarks |
 | VTune / `perf lock` | Contention, lock profiling |
@@ -469,6 +472,12 @@ tools — the LLM can add them temporarily for a profiling run:
 - [ ] One controlled change per experiment: profile → hypothesize → smallest
       fix → re-benchmark → correctness → keep only if real.
 - [ ] Re-profile after every merged change; performance work is iterative.
+- [ ] **Final check of every performance task: merge all new branches back
+      into the branch where the user called you, then run all tests plus
+      `valgrind` (memcheck), `helgrind`, and `drd`** — the full test suite
+      plus memory errors, data races, and deadlocks before reporting done.
+      These are the **penultimate and last tasks of the performance task's
+      todo file** (`llm/PLAN.md` §2).
 
 ## Appendix A. Priority cheat-sheet
 

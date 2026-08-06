@@ -133,7 +133,8 @@ below use `-j4` — this machine's value (8 physical cores / 2).
 
 The `-s` flag supports only one sanitizer at a time (`ADDRESS` or `UB`), but you
 can combine them by forwarding CMake flags. This combination matches what CI
-runs:
+runs — **one build runs both sanitizers at once; never do two separate
+sanitizer builds** (each build consumes a lot of time):
 
 ```bash
 ./build.sh -j4 -f -b -p -d --sanitizer=UB \
