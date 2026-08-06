@@ -168,6 +168,9 @@ private:
     // Equality fast-path: sets bits only for in-group row pairs (p in [i0,i1), q>p).
     void BuildEqualityBitsetRange(size_t a, size_t i0, size_t i1);
     void BuildSupportIndex();
+    // Exact-equality fast path: builds support_index_ directly from the interned
+    // column ids by partition refinement, without similarity bitsets at all.
+    void BuildSupportIndexDirect();
     [[nodiscard]] std::size_t ComputeSupport(uint32_t attrs_mask) const;
     // Computes conf and supp for a single individual
     [[nodiscard]] Individual Evaluate(Individual const& ind) const;

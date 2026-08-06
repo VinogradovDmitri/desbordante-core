@@ -342,6 +342,24 @@ void GaRfd::BuildSimilarityBitsets() {
             "{}",
             total_pairs_, num_attrs_, num_rows_, static_cast<unsigned>(threads_));
     std::size_t const num_uint64_per_attr = (total_pairs_ + 63) / 64;
+
+    // Exact-equality tables need no similarity bitsets: support(mask) is the
+    // number of row pairs agreeing on every attribute of mask, which the direct
+    // precompute below derives from the interned column ids in O(rows * 2^attrs)
+    // integer work. That is strictly cheaper than the pair loop + AND-reduce for
+    // every table that would have taken the precompute branch anyway, and it also
+    // covers masks the old precompute bound would have left on-the-fly.
+    bool const all_ids = std::ranges::all_of(
+            cmp_mode_, [](CmpMode mode) { return mode == CmpMode::kIds; });
+    // Bounds the direct precompute: O(rows * 2^attrs) work and ~16 bytes of
+    // transient storage per entry (two flat slices), so rows * table_size = 2^22
+    // keeps the build under ~30 ms and ~70 MB on one core.
+    constexpr std::size_t kMaxDirectRows = std::size_t{1} << 22;
+    if (all_ids && num_attrs_ < 24 && num_rows_ <= (kMaxDirectRows >> num_attrs_)) {
+        BuildSupportIndexDirect();
+        return;
+    }
+
     attr_similarity_bits_.assign(num_attrs_, AttrBits(num_uint64_per_attr, 0));
 
     // The per-attribute pair loop is the dominant cost (~O(rows^2) metric.Compare
@@ -450,6 +468,118 @@ void GaRfd::BuildSupportIndex() {
     }
 }
 
+void GaRfd::BuildSupportIndexDirect() {
+    std::size_t const table_size = static_cast<std::size_t>(1) << num_attrs_;
+    support_index_.assign(table_size, 0);
+    support_index_[0] = total_pairs_;
+    LOG_INFO("Using direct support precompute ({} rows, {} attributes)", num_rows_, num_attrs_);
+
+    // Flat per-mask row partitions: mask m's rows live in rows_flat[m*num_rows_,
+    // (m+1)*num_rows_), and the boundaries between its groups in the slice
+    // bounds_flat[m*(num_rows_+1), ...) — group g spans
+    // [bounds_flat[off+g], bounds_flat[off+g+1]). The bounds slice needs
+    // num_rows_+1 entries: one boundary per group plus the trailing one (a mask
+    // can have up to num_rows_ groups of size 1). A mask's partition refines its
+    // parent's (parent = mask without the lowest attribute): every parent group
+    // is split by the added attribute's interned ids with a counting sort, so
+    // the total work is O(num_rows_ * 2^num_attrs_) and needs no similarity
+    // bitsets at all.
+    //
+    // Both arrays are backed by the huge-page-aware allocator (mmap), so their
+    // memory returns to the OS when the precompute finishes. The benchmark runs
+    // many datasets in one process, and plain-malloc'd per-group vectors would
+    // otherwise let RSS accumulate across runs.
+    std::size_t const slice = num_rows_ * table_size;
+    std::size_t const bnd_slice = (num_rows_ + 1) * table_size;
+    std::vector<size_t, HugePageAllocator<size_t>> rows_flat(slice);
+    std::vector<size_t, HugePageAllocator<size_t>> bounds_flat(bnd_slice);
+    std::vector<size_t> num_groups(table_size, 0);
+    std::iota(rows_flat.begin(), rows_flat.begin() + num_rows_, size_t{0});
+    bounds_flat[0] = 0;
+    bounds_flat[1] = num_rows_;
+    num_groups[0] = 1;
+
+    // Masks of the same popcount are independent (they read the previous level's
+    // slices and write their own), so process level by level, parallelizing each
+    // level. The pool is created once and reused across levels.
+    auto refine_mask = [this, &rows_flat, &bounds_flat, &num_groups](uint32_t mask) {
+        uint32_t const parent = mask & (mask - 1);
+        int const a = FirstSetBit(mask);
+        auto const& col_ids = column_ids_[static_cast<size_t>(a)];
+        std::size_t const rows_off = static_cast<std::size_t>(mask) * num_rows_;
+        std::size_t const rows_p_off = static_cast<std::size_t>(parent) * num_rows_;
+        std::size_t const bnd_off = static_cast<std::size_t>(mask) * (num_rows_ + 1);
+        std::size_t const bnd_p_off = static_cast<std::size_t>(parent) * (num_rows_ + 1);
+
+        // Per-worker scratch, reused across masks and groups. Sized to num_rows_
+        // (an attribute has at most num_rows_ distinct interned ids); count is
+        // reset for every group so count[id] == 0 marks an untouched id.
+        static thread_local std::vector<uint32_t> count;
+        static thread_local std::vector<uint32_t> off;
+        static thread_local std::vector<uint32_t> touched;
+        if (count.size() < num_rows_) {
+            count.assign(num_rows_, 0);
+            off.assign(num_rows_, 0);
+        }
+        touched.clear();
+
+        std::size_t child_groups = 0;
+        std::size_t cursor = 0;
+        std::size_t support = 0;
+        bounds_flat[bnd_off] = 0;
+        for (size_t g = 0; g < num_groups[parent]; ++g) {
+            std::size_t const b0 = bounds_flat[bnd_p_off + g];
+            std::size_t const b1 = bounds_flat[bnd_p_off + g + 1];
+            // Pass 1: count the group's rows by the added attribute's id.
+            for (std::size_t i = b0; i < b1; ++i) {
+                uint32_t const id = col_ids[rows_flat[rows_p_off + i]];
+                if (count[id] == 0) {
+                    count[id] = 1;
+                    touched.push_back(id);
+                } else {
+                    ++count[id];
+                }
+            }
+            // Pass 2: subgroup start offsets (in first-seen id order) + support.
+            for (uint32_t id : touched) {
+                std::size_t const c = count[id];
+                support += c * (c - 1) / 2;
+                off[id] = static_cast<uint32_t>(cursor);
+                cursor += c;
+                bounds_flat[bnd_off + ++child_groups] = cursor;
+            }
+            // Pass 3: scatter the rows into the child's slice.
+            for (std::size_t i = b0; i < b1; ++i) {
+                uint32_t const id = col_ids[rows_flat[rows_p_off + i]];
+                rows_flat[rows_off + off[id]++] = rows_flat[rows_p_off + i];
+            }
+            for (uint32_t id : touched) count[id] = 0;
+            touched.clear();
+        }
+        num_groups[mask] = child_groups;
+        support_index_[mask] = support;
+    };
+
+    std::optional<util::WorkerThreadPool> pool;
+    if (threads_ > 1) pool.emplace(threads_);
+    for (uint32_t pc = 1; pc <= num_attrs_; ++pc) {
+        std::vector<uint32_t> level;
+        for (uint32_t mask = 1; mask < table_size; ++mask) {
+            if (std::popcount(mask) == pc) level.push_back(mask);
+        }
+        if (level.empty()) continue;
+        if (pool) {
+            pool->ExecIndex(
+                    [&refine_mask, &level](model::Index i) {
+                        refine_mask(level[static_cast<size_t>(i)]);
+                    },
+                    static_cast<model::Index>(level.size()));
+        } else {
+            for (uint32_t mask : level) refine_mask(mask);
+        }
+    }
+}
+
 std::size_t GaRfd::ComputeSupport(uint32_t attrs_mask) const {
     if (!support_index_.empty()) [[likely]] {
         return support_index_[attrs_mask];
@@ -526,24 +656,27 @@ GaRfd::Individual GaRfd::Evaluate(Individual const& ind) const {
 }
 
 void GaRfd::EvaluatePopulation(Population& pop) const {
-    if (threads_ <= 1 || pop.size() < 2) {
-        for (auto& ind : pop) ind = Evaluate(ind);
+    // With a precomputed support index, Evaluate is two O(1) table reads per
+    // individual, so spawning worker threads per generation only adds thread
+    // startup overhead (it used to amortize expensive AND-reduce computes).
+    if (support_index_.empty() && threads_ > 1 && pop.size() >= 2) {
+        // Each thread writes only its own slot, and ComputeSupport reads the
+        // read-only attr_similarity_bits_, so this is data-race free.
+        std::atomic<model::Index> idx = 0;
+        auto work = [&]() {
+            model::Index i;
+            while ((i = idx.fetch_add(1, std::memory_order::acquire)) < pop.size()) {
+                pop[i] = Evaluate(pop[i]);
+            }
+        };
+        std::vector<std::thread> workers;
+        workers.reserve(threads_);
+        for (config::ThreadNumType t = 0; t < threads_; ++t) workers.emplace_back(work);
+        work();
+        for (auto& w : workers) w.join();
         return;
     }
-    // Each thread writes only its own slot, and ComputeSupport reads the
-    // read-only support_index_ / attr_similarity_bits_, so this is data-race free.
-    std::atomic<model::Index> idx = 0;
-    auto work = [&]() {
-        model::Index i;
-        while ((i = idx.fetch_add(1, std::memory_order::acquire)) < pop.size()) {
-            pop[i] = Evaluate(pop[i]);
-        }
-    };
-    std::vector<std::thread> workers;
-    workers.reserve(threads_);
-    for (config::ThreadNumType t = 0; t < threads_; ++t) workers.emplace_back(work);
-    work();
-    for (auto& w : workers) w.join();
+    for (auto& ind : pop) ind = Evaluate(ind);
 }
 
 bool GaRfd::AllOf(Population const& pop) const {
