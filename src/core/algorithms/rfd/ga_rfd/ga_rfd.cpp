@@ -359,6 +359,16 @@ void GaRfd::BuildSimilarityBitsets() {
         BuildSupportIndexDirect();
         return;
     }
+    if (all_ids) {
+        // Wide exact-equality table: a full support table (2^num_attrs_ entries)
+        // and the similarity bitsets are both too expensive, but the GA only ever
+        // evaluates a few thousand distinct masks. Compute supports lazily per
+        // queried mask (exact, cached) instead.
+        lazy_support_ = true;
+        LOG_INFO("Using lazy per-mask support compute ({} rows, {} attributes)", num_rows_,
+                 num_attrs_);
+        return;
+    }
 
     attr_similarity_bits_.assign(num_attrs_, AttrBits(num_uint64_per_attr, 0));
 
@@ -580,9 +590,94 @@ void GaRfd::BuildSupportIndexDirect() {
     }
 }
 
+std::size_t GaRfd::ComputeSupportDirect(uint32_t attrs_mask) const {
+    // Exact support of a mask over the interned column ids: group the rows by
+    // their id tuple on the mask's attributes, then support = sum over groups of
+    // C(size, 2). Grouping = sorting row indices with a lexicographic comparator
+    // over the ids; rows with an identical tuple are contiguous in any valid sort
+    // (the comparator's equivalence is exactly "equal tuple"), so the value is
+    // deterministic and there are no hash collisions to guard against. The
+    // scratch buffer is thread_local, keeping parallel evaluations race-free.
+    uint32_t mm = attrs_mask;
+    uint32_t attrs[32];
+    int k = 0;
+    while (mm) {
+        attrs[k++] = static_cast<uint32_t>(FirstSetBit(mm));
+        mm &= mm - 1;
+    }
+
+    thread_local std::vector<size_t> idx;
+    if (idx.size() != num_rows_) idx.resize(num_rows_);
+    std::iota(idx.begin(), idx.end(), size_t{0});
+    std::sort(idx.begin(), idx.end(), [this, &attrs, k](size_t i, size_t j) {
+        for (int t = 0; t < k; ++t) {
+            uint32_t const a = column_ids_[attrs[t]][i];
+            uint32_t const b = column_ids_[attrs[t]][j];
+            if (a != b) return a < b;
+        }
+        return false;
+    });
+
+    std::size_t support = 0;
+    size_t run_start = 0;
+    for (size_t i = 1; i < num_rows_; ++i) {
+        bool same = true;
+        for (int t = 0; t < k; ++t) {
+            if (column_ids_[attrs[t]][idx[i]] != column_ids_[attrs[t]][idx[i - 1]]) {
+                same = false;
+                break;
+            }
+        }
+        if (!same) {
+            std::size_t const c = i - run_start;
+            support += c * (c - 1) / 2;
+            run_start = i;
+        }
+    }
+    std::size_t const c = num_rows_ - run_start;
+    support += c * (c - 1) / 2;
+    return support;
+}
+
+std::size_t GaRfd::ComputeSupportLazy(uint32_t attrs_mask) const {
+    if (attrs_mask == 0) [[unlikely]] {
+        return total_pairs_;
+    }
+
+    // Single attribute: sum over its equality groups, no sort needed.
+    if ((attrs_mask & (attrs_mask - 1)) == 0u) [[unlikely]] {
+        std::size_t s = 0;
+        for (auto const& group : equality_groups_[static_cast<size_t>(FirstSetBit(attrs_mask))]) {
+            s += group.size() * (group.size() - 1) / 2;
+        }
+        return s;
+    }
+
+    {
+        std::lock_guard<std::mutex> const lock(support_cache_mutex_);
+        auto const it = support_cache_.find(attrs_mask);
+        if (it != support_cache_.end()) return it->second;
+    }
+
+    std::size_t const support = ComputeSupportDirect(attrs_mask);
+
+    {
+        std::lock_guard<std::mutex> const lock(support_cache_mutex_);
+        // Bounded cache: once full, drop it entirely (recomputing is cheap and
+        // the GA revisits few masks).
+        if (support_cache_.size() >= cache_max_size_) support_cache_.clear();
+        support_cache_.try_emplace(attrs_mask, support);
+    }
+    return support;
+}
+
 std::size_t GaRfd::ComputeSupport(uint32_t attrs_mask) const {
     if (!support_index_.empty()) [[likely]] {
         return support_index_[attrs_mask];
+    }
+
+    if (lazy_support_) [[unlikely]] {
+        return ComputeSupportLazy(attrs_mask);
     }
 
     if (attrs_mask == 0) [[unlikely]] {
@@ -930,6 +1025,8 @@ void GaRfd::ExecuteInternal() {
 void GaRfd::ResetState() {
     discovered_.clear();
     support_index_.clear();
+    support_cache_.clear();
+    lazy_support_ = false;
 }
 
 GaRfd::~GaRfd() {

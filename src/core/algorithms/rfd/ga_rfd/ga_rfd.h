@@ -6,6 +6,7 @@
 #include <iterator>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <random>
@@ -132,6 +133,13 @@ private:
     std::vector<std::vector<uint64_t, HugePageAllocator<uint64_t>>> attr_similarity_bits_;
     // Precomputed support per attribute mask (size 2^num_attrs_). O(1) lookup.
     std::vector<std::size_t, HugePageAllocator<std::size_t>> support_index_;
+    // Lazy-support mode: enabled for exact-equality tables too wide for the direct
+    // precompute (2^num_attrs_ too large or too many rows). Supports are computed
+    // per queried mask by exact grouping (ComputeSupportDirect) and cached here;
+    // the mutex guards the cache because EvaluatePopulation may run in parallel.
+    bool lazy_support_ = false;
+    mutable std::mutex support_cache_mutex_;
+    mutable std::unordered_map<uint32_t, std::size_t> support_cache_;
 
     std::size_t cache_max_size_ = 10000;
 
@@ -171,6 +179,12 @@ private:
     // Exact-equality fast path: builds support_index_ directly from the interned
     // column ids by partition refinement, without similarity bitsets at all.
     void BuildSupportIndexDirect();
+    // Lazy-support mode: exact support of a mask by grouping rows on their id
+    // tuple (sort-based, collision-free and deterministic). thread_local scratch
+    // keeps parallel evaluations race-free.
+    [[nodiscard]] std::size_t ComputeSupportDirect(uint32_t attrs_mask) const;
+    // Lazy-support mode: cached wrapper around ComputeSupportDirect.
+    [[nodiscard]] std::size_t ComputeSupportLazy(uint32_t attrs_mask) const;
     [[nodiscard]] std::size_t ComputeSupport(uint32_t attrs_mask) const;
     // Computes conf and supp for a single individual
     [[nodiscard]] Individual Evaluate(Individual const& ind) const;
