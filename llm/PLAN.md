@@ -1,97 +1,81 @@
 # PLAN.md — Phase-Based Workflow
 
-How to decompose, track, and merge tasks. Todo files are created for **every**
-task — large or small. Huge tasks (multi-algorithm work, large refactors,
-performance work) additionally get phase decomposition.
+Todo files are created for **every** task — large or small. Huge tasks
+(multi-algorithm work, large refactors, performance work) additionally get
+phase decomposition.
 
 ## 1. When to use
 
-Todo files (`bin/todo_<num>.md`) are created for **all tasks**, even small
-ones:
-
-- A huge task touches several algorithms, files, or subsystems at once — split
-  it into phases, one todo file per phase.
+- A huge task touches several algorithms/files at once → split into phases,
+  one todo file per phase.
 - A task changes performance targets (fast paths, threading, bitsets, …).
 - A task needs more than a few commits of coordinated work.
-- A small task gets a single `bin/todo_1.md` with its granular checkboxes — no
+- A small task gets a single `bin/todo_1.md` with granular checkboxes — no
   phases, no extra files.
 
 There is no "too small" exemption: every task is tracked in a todo file.
 
 ## 2. Phases and todo files
 
-- Split a huge task into **as many phases as reasonable**. Each phase is one
-  coherent deliverable that can be verified independently. A small task has a
-  single phase (one todo file).
-- **Creating all todo files is always the first task** (see `llm/CLAUDE.md`
-  §0). The LLM generates **all** phase files up front:
-  - `bin/todo_1.md`, `bin/todo_2.md`, …, `bin/todo_N.md` — one numbered file
-    per phase; a small task has only `bin/todo_1.md`.
-  - Every todo file contains: goal, files touched, acceptance criteria, and
-    **as many granular checkbox tasks as possible** (each task = one small,
-    individually verifiable step).
-- Follow-up tasks from the user land in the todo files too — e.g. the next
-  tasks go into `bin/todo_1.md`.
-- **Performance-related tasks** get a todo file with two fixed entries: the
-  **first task is always "create a new branch for trying to implement the
-  current optimization"** (`perf/<todo-num>-<short-slug>`, §3) — the branch
-  exists before any profiling or code change — and the **penultimate task is
-  merging all new branches back into the branch where the user called the
-  session** (the perf branch plus any `joint/*` branches, conflicts resolved
-  there). The **last task is always running all tests plus `valgrind`,
-  `helgrind`, and `drd`** (full test suite + memory errors, data races,
-  deadlocks) as the final verification before reporting done (§4).
-- Execute phases **one by one**:
-  1. Finish `bin/todo_<num>.md` — every checkbox checked.
-  2. Run the verification pass from `llm/DEVELOPMENT.md` §6 (build, targeted
-     `ctest -R`, example `pytest`, clang-format, cmake-format) and report the
-     commands + results.
-  3. **Conditional loop:** if any check fails, stay in the current phase —
-     fix, then re-run starting from the first failed check. Never start the
-     next phase with a failing or unrun check.
-  4. Only then start `bin/todo_<num+1>.md`.
-- After a phase is successfully implemented, **delete its `bin/todo_<num>.md`**
-  file. `bin/` is untracked (see `.git/info/exclude`), so todo files never enter the
-  repo and are purely working-tool state.
+- Split into as many phases as reasonable; each phase is one coherent,
+  independently verifiable deliverable.
+- **Creating all todo files is always the first task** (`llm/CLAUDE.md`
+  §0): `bin/todo_1.md` … `bin/todo_N.md` — one per phase; a small task has
+  only `bin/todo_1.md`. Each contains: goal, files touched, acceptance
+  criteria, and as many granular checkboxes as possible. Follow-up user
+  tasks land in them too.
+- Execute phases one by one: finish the todo (every checkbox) → run the
+  verification pass (`llm/DEVELOPMENT.md` §6) and report commands + results
+  → **conditional loop** on failure (fix, re-run from the first failed
+  check) → only then start the next phase.
+- After a phase is done, **delete its `bin/todo_<num>.md`** (`bin/` is
+  untracked working state, never in the repo).
+- **Performance-related tasks** have two fixed todo entries:
+  - The **first task is always "create a new branch for trying to
+    implement the current optimization"** (`perf/<todo-num>-<short-slug>`,
+    §3) — the branch exists before any profiling or code change.
+  - The **penultimate task is merging all new branches back into the
+    branch where the user called the session** (the perf branch plus any
+    `joint/*` branches, conflicts resolved there).
+  - The **last task is always running all tests plus `valgrind`,
+    `helgrind`, and `drd`** (full test suite + memory errors, data races,
+    deadlocks) before reporting done.
 
 ## 3. Performance-target changes → branches
 
-- Any task that changes performance targets gets its **own branch**:
-  `perf/<todo-num>-<short-slug>`, e.g. `perf/3-threaded-bitset-build`.
+- Any perf task gets its **own branch**: `perf/<todo-num>-<short-slug>`
+  (e.g. `perf/3-threaded-bitset-build`).
 - Creating this branch is the **first task in the task's todo file** (§2) —
-  it happens before profiling or any code change, so the optimization is
-  always tried on an isolated experiment branch.
+  before profiling or any code change, so the optimization is always tried
+  on an isolated experiment branch.
 - One branch changes exactly **one type of thing** (one fast path, one
   threading change, one data structure).
-- Every performance task records its **numeric expected improvement** in the
-  todo file before implementation, e.g.:
-  "≥ 5% faster on `examples/datasets/sample_height_weight.csv`, measured with
-  the protocol in PLAN.md §5."
+- Every perf task records its **numeric expected improvement** in the todo
+  file before implementation (e.g. "≥ 5% faster on
+  `examples/datasets/sample_height_weight.csv`, measured with the §5
+  protocol").
 
 ## 4. Joint validation and the merge decision
 
-- Before merging two perf branches, create a temporary joint branch that merges
-  both: `joint/<a>-<b>`.
-- Measure all four points with the §5 protocol: **base → branch A → branch B →
-  joint**.
-- The merge is approved when **either** condition holds:
-  - **(a)** the joint shows the pre-recorded numeric improvement, **or**
-  - **(b)** there is no measured gain on the current processor, **but** the
-    change makes the code more readable, **or** consumes less memory, **or**
-    should theoretically improve performance on other processors, **and** it
-    does **not** decrease performance on the current processor. In that case
-    the implementation is considered a success.
-- If the joint is worse than the base, or brings no gain and no redeeming
-  quality (readability / memory / other-hardware potential), **deep-think
-  whether the implementation is needed at all** — do not merge on autopilot.
-- After a branch is merged, **delete it**: `git branch -d <branch>` locally,
-  and `git push origin --delete <branch>` if it was pushed. Clean up the
-  temporary `joint/*` branches the same way.
+- Before merging two perf branches: temporary joint branch
+  `joint/<a>-<b>`.
+- Measure all four points with the §5 protocol: **base → branch A →
+  branch B → joint**.
+- Merge approved when **either**: **(a)** the joint shows the pre-recorded
+  numeric improvement; or **(b)** no measured gain on the current
+  processor, but the change improves readability / consumes less memory /
+  should help other processors, **and** does not decrease performance on
+  the current processor — then the implementation is a success.
+- If the joint is worse than base with no gain and no redeeming quality
+  (readability / memory / other-hardware potential) → **deep-think whether
+  the implementation is needed at all** — don't merge on autopilot.
+- After merging, delete the branch (`git branch -d <branch>` locally, and
+  on origin if it was pushed) and the temporary `joint/*` branches.
 
 ## 5. Benchmark measurement protocol
 
-Follow this exactly so numbers are comparable between base, branches, and the
-joint. Adapt the commented values to the machine; the sequence is the point.
+Follow exactly so numbers are comparable. Adapt the commented values to the
+machine; the sequence is the point.
 
 ```bash
 # 1. Stop background update services that add noise
@@ -113,16 +97,14 @@ echo 0 | sudo tee /sys/devices/system/cpu/cpuX/online
 echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
 
 # 5. Pin the CPU frequency to half of the maximum (non-turbo) frequency.
-#    Half-of-max is deterministic and machine-independent: it works on any
-#    CPU regardless of its supported frequency range (unlike a hardcoded
-#    value, which can sit below or above what a given machine supports)
+#    Half-of-max is deterministic and machine-independent.
 MAX_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)  # after turbo is off
 HALF_FREQ=$((MAX_FREQ / 2))
 cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_frequencies
 echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq
 echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq
 
-cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq	# to verify
+cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq   # to verify
 
 # 6. Isolate cores 1-4 for the measurement (adjust the set)
 sudo cset shield -c 1-4 -k on
@@ -132,13 +114,12 @@ cset shield --exec -- perf stat -r 10 <cmd>
 ```
 
 Notes:
-- `scaling_available_frequencies` may be empty (intel_pstate with HWP):
-  frequencies are then continuous, and any value in `[min, max]` is honored.
-- If the frequency write is rejected (`Invalid argument`), pick the entry from
-  `scaling_available_frequencies` closest to half of the max and use it.
-- Compare runs only when both were taken under the same protocol on the same
-  machine state. Record raw numbers (e.g. the `perf stat` time) in the todo
-  file next to the expected improvement, and append them — together with the
-  machine state (governor, pinned frequency, isolated cores, ASLR off) — to
-  `bin/measurements_<YYYY-MM-DD>.md`, so numbers stay comparable across
-  sessions.
+- `scaling_available_frequencies` may be empty (intel_pstate HWP) —
+  frequencies are then continuous, any `[min, max]` value is honored.
+- Rejected frequency write → pick the listed frequency closest to half the
+  max.
+- Compare runs only when both were taken under the same protocol and
+  machine state. Record raw numbers in the todo file next to the expected
+  improvement, and append them — together with the machine state (governor,
+  pinned frequency, isolated cores, ASLR off) — to
+  `bin/measurements_<YYYY-MM-DD>.md`.
