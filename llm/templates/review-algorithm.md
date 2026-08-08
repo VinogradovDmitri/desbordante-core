@@ -20,8 +20,8 @@
 - [ ] Scope: user-specified or inferred from the diff?
 - [ ] Tests: default is **build only, no tests** — build and run profiling
       tools (perf, valgrind/callgrind, helgrind/drd) on the binaries; no
-      `ctest`, sanitizer runs, or examples/snapshots — or something
-      different for this review?
+      `ctest` or examples/snapshots — or something different for this
+      review?
 - [ ] Performance: any numeric targets / hot spots / datasets of interest?
 - [ ] Known issues the user is already aware of (not to re-report)?
 - [ ] Output: separate report per mode (default) or combined?
@@ -51,13 +51,15 @@ Answers: `<record them here>`
 
 ## 3. Toolchain matrix results
 
-| Config | Build | ASan+UBSan (combined) | Targeted tests | Verified by |
-|---|---|---|---|---|
-| Linux GCC 10+ | `<pass/fail/not run>` | `<…>` | `<…>` | `<exact command>` |
-| Linux Clang 16+ | `<…>` | `<…>` | `<…>` | `<…>` |
-| macOS Apple Clang 16+ | `<…>` | `<…>` | `<…>` | `<…>` |
-| macOS GCC 10+ | `<…>` | `<…>` | `<…>` | `<…>` |
-| macOS LLVM Clang 16+ | `<…>` | `<…>` | `<…>` | `<…>` |
+Sanitizers are covered by CI (GitHub Actions) — no local sanitizer builds.
+
+| Config | Build | Targeted tests | Verified by |
+|---|---|---|---|
+| Linux GCC 10+ | `<pass/fail/not run>` | `<…>` | `<exact command>` |
+| Linux Clang 16+ | `<…>` | `<…>` | `<…>` |
+| macOS Apple Clang 16+ | `<…>` | `<…>` | `<…>` |
+| macOS GCC 10+ | `<…>` | `<…>` | `<…>` |
+| macOS LLVM Clang 16+ | `<…>` | `<…>` | `<…>` |
 
 > If a config was not run, say so explicitly — do not claim it passed
 > (`llm/CLAUDE.md` §5).

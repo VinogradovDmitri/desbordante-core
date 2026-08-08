@@ -3,8 +3,9 @@
 Persistent knowledge graph built from `src/` (C++ code, AST), `docs/papers/`
 (semantic extraction) and `llm/` (guidance docs), merged into one. Use it to
 answer codebase questions without re-reading files. Mandatory workflow:
-**consult the graph before and during work; refresh it after work**
-(`llm/CLAUDE.md` §7).
+**consult the graph before and during work** (`llm/CLAUDE.md` §7); if the
+graph is missing or stale (not updated for a long time), **write a warning
+to the user** — never create or refresh it yourself.
 
 ## Get started (fresh machine only)
 
@@ -21,33 +22,27 @@ scratch (skill Steps 1-9).
 
 ## Workflow: before, during, after
 
-**If the graph needs creating/updating, ask the user first whether they can
-run it.** If yes — hand them the exact command and wait for their call-back.
-If not — use the existing `graphify-out/graph.json` as-is and state its
-vintage when citing it.
+**The LLM never creates or updates the graph** — those tools are run by
+the user (`llm/README.md`). If the graph needs creating/updating, write a
+warning to the user instead (per `llm/CLAUDE.md` §7).
 
 **Before** a non-trivial task: `graphify-out/` is untracked (per-clone
-`.git/info/exclude`), so a fresh clone has no graph:
-- Missing → create: full `/graphify` skill pipeline, or
-  `llm/graphify-refresh` when `graphify-out/cache/` exists.
-- Stale (code newer than the graph — check with
-  `find src docs llm -newer graphify-out/graph.json -print -quit`) →
-  `llm/graphify-update` first. Acting on a stale graph is worse than on
-  none.
-- On a fresh clone, re-add the local excludes: `bin/` and `graphify-out/`.
+`.git/info/exclude`), so a fresh clone has no graph. Check staleness with
+`find src docs llm -newer graphify-out/graph.json -print -quit`; if
+anything is newer (or the graph is old), **write a warning to the user** —
+do not build it yourself. On a fresh clone, re-add the local excludes:
+`bin/` and `graphify-out/`.
 
 Then map dependencies: `llm/graphify-explain "<component>"`,
 `llm/graphify-path "A" "B"`, `llm/graphify-query "<question>"`,
 `llm/graphify-reflect` (prior lessons first).
 
 **During** work: answer structural questions with query/path/explain
-instead of greps. Dirty `graphify-out/` after updates is expected.
+instead of greps. Dirty `graphify-out/` after user updates is expected.
 
-**After** work: code changed → `llm/graphify-update` (free, AST-only);
-docs/papers changed → `llm/graphify-refresh` (adds paper semantic
-re-extraction; needs `GEMINI_API_KEY`, else code-only fallback with a
-warning). Report the refresh in the final summary with node/edge counts.
-Skip the graph only for stale-graph tasks or on the user's word.
+**After** work: no graph action — the LLM does not refresh the graph. If
+the user wants it refreshed, they run `llm/graphify-update` (code changed)
+or `llm/graphify-refresh` (docs/papers changed) themselves.
 
 ## Where things live
 
@@ -104,9 +99,13 @@ Keep ids `repo::src_*` (code) and `llm_*` (docs) for stable merges.
 - `INFERRED` edges are reasoned suggestions; prefer `EXTRACTED` as evidence.
 - If the graph has no relevant vocabulary for a question, say so instead of
   substituting near-synonyms.
-- If the generators change, re-run `llm/graphify-update` (idempotent).
+- If the generators change, the user should re-run `llm/graphify-update`
+  (idempotent).
 
 ## Keeping the graph fresh
+
+These refresh tools are run by the **user**, never by the LLM. If the
+graph is stale, the LLM warns the user and leaves the update to them.
 
 - Code changes → `llm/graphify-update` (free).
 - Doc/paper changes or redo of paper extraction → `llm/graphify-refresh`

@@ -38,14 +38,13 @@
 - [ ] Unit tests `src/tests/unit/test_<algo>.cpp` via
       `desbordante_add_test`
 - [ ] Usage example + snapshot (§12)
-- [ ] Compilers & sanitizer matrix (§1, §7); cross-config behavior (§6)
+- [ ] Compilers matrix (§1); cross-config behavior (§6)
 - [ ] CI awareness — Python wheels (§19)
 
 ## 3. Verification chain (DEVELOPMENT.md §6, in order)
 
-Run each check, record command + result in `bin/session_<YYYY-MM-DD>.md`.
-**Conditional loop:** on failure → fix → re-run from the first failed
-check; never skip a check or report it passed without running it.
+Run each check, record command + result in `bin/session_<YYYY-MM-DD>.md`
+(per `llm/DEVELOPMENT.md` §6 — conditional loop on failure).
 
 - [ ] Build: `<command>` → `<result>`
 - [ ] Targeted tests: `ctest --test-dir build -R "<algo-regex>"` →
@@ -53,7 +52,9 @@ check; never skip a check or report it passed without running it.
 - [ ] Examples + snapshots: `pytest … -k <algo>` → `<result>`
 - [ ] clang-format v22 on changed C++ files → `<result>`
 - [ ] cmake-format on changed CMake files → `<result>`
-- [ ] Graph refresh: `llm/graphify-update` → `<result>`
+- [ ] Graph staleness check (`find src docs llm -newer
+      graphify-out/graph.json -print -quit`); if stale, warned the user
+      (§7) → `<result>`
 - [ ] Second-pass review: a fresh reviewer pass (or second model) checks
       the final output against the §1 acceptance criteria → `<findings
       fixed / explicitly waived>`
@@ -63,4 +64,5 @@ check; never skip a check or report it passed without running it.
 - [ ] All `llm/CLAUDE.md` §6 checkboxes ticked
 - [ ] `bin/todo_<num>.md` for this task fully checked and deleted
 - [ ] Session log up to date (`bin/session_<YYYY-MM-DD>.md`)
-- [ ] Nothing committed or pushed unless explicitly asked
+- [ ] Nothing committed or pushed unless explicitly asked; commit message
+      = single-line subject, no description (repo convention)

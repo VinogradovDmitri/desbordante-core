@@ -29,14 +29,12 @@ Checklist of checkable requirements. Review every box, in order. See
 ## 6. Cross-configuration behavior
 - [ ] No reliance on implementation-defined behavior (e.g. equal-element
       order after `std::sort`; `std::stable_sort` if order matters)
-- [ ] No UB missed by sanitizers (e.g. narrowing float→int)
+- [ ] No UB missed by CI sanitizers (e.g. narrowing float→int) — CI runs
+      ASan/UBSan
 
 ## 7. Sanitizers
-- [ ] Passes UB sanitizer on GCC and Clang
-- [ ] Passes Address sanitizer on GCC and Clang
-- [ ] ASan+UBSan verified in **one combined build per compiler**
-      (`-fsanitize=address,undefined` together, `llm/DEVELOPMENT.md` §1) —
-      never two separate sanitizer builds (build time)
+- [ ] No local sanitizer builds required — ASan/UBSan are run by CI
+      (GitHub Actions); a local build must not be a sanitizer build
 - [ ] Any suppression (`no_sanitize`/ignore list) is a confirmed false
       positive, minimal in scope, equivalent GCC check left enabled
 
@@ -187,18 +185,19 @@ Checklist of checkable requirements. Review every box, in order. See
       logs, review reports, and every temp/scratch file (profiling data,
       dumps, one-off scripts, artifacts); never the opencode dir, repo
       root, `llm/`, or `graphify-out/` (see `llm/CLAUDE.md` §0)
-- [ ] Todo statuses updated in real time as work progresses — a step is
-      marked `in_progress` before it starts and `completed` right after it
-      finishes; never all boxes batch-checked at the end (see
-      `llm/CLAUDE.md` §0)
-- [ ] Todo lists are **real files in `bin/todo_<num>.md`**, not just
-      in-session tool state — the in-session todo display mirrors the file
-      and must stay identical to it (see `llm/CLAUDE.md` §0)
-- [ ] A fully checked `bin/todo_<num>.md` is **deleted** after its
-      verification pass, per phase (`llm/PLAN.md` §2) — leftover completed
-      todo files are a tracking failure
+- [ ] Todo/session discipline per `llm/CLAUDE.md` §0/§10 (S-rules):
+      per-phase `bin/todo_<num>.md` files created first, real-time
+      statuses, deleted when fully done — no exceptions for task size
 
 ## 19. CI awareness — Python wheels
 - [ ] Aware that the wheel matrix runs on push to `main`, weekly (Mon 03:00
       UTC), and on release; skipped on PRs unless the
       `python-packaging-risk` label is added (removing it cancels the run)
+
+## 20. Superior rules — todo & checklist discipline (S1–S6)
+
+Mandatory in every session. Full text and authority: `llm/CLAUDE.md` §10 —
+S1 todo files per phase, S2 transcribe the governing checklist (for Design
+that is this file's §1–§19), S3 live statuses, S4 in-order walk, S5
+completed = verified, S6 startup gate. The S-rules are session discipline,
+not algorithm requirements: they are not transcribed into Design todos.

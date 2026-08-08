@@ -20,11 +20,10 @@ defects briefly as observations only.
 
 ## Toolchain matrix
 
-Must build and pass sanitizers on: Linux GCC 10+, Linux LLVM Clang 16+,
-macOS Apple Clang 16+, macOS GCC 10+, macOS LLVM Clang 16+. ASan+UBSan run
-**together, one build per compiler** (`-fsanitize=address,undefined`,
-`llm/DEVELOPMENT.md` §1) — never two separate sanitizer builds. Cross-check
-README "Dependencies" for `CXXFLAGS`/`LDFLAGS`.
+Must build and pass tests on: Linux GCC 10+, Linux LLVM Clang 16+,
+macOS Apple Clang 16+, macOS GCC 10+, macOS LLVM Clang 16+. **Sanitizers
+(ASan/UBSan) are run by CI only — no local sanitizer builds in reviews.**
+Cross-check README "Dependencies" for `CXXFLAGS`/`LDFLAGS`.
 
 ## Review defaults (user interview — standing answers, overridable per review)
 
@@ -81,6 +80,12 @@ Run separately or all step-by-step (user picks; default: all three):
 0. **Interview** the user (mode(s), target, algorithm text, scope, tests) —
    template §0. No further questions during the review.
 1. Establish scope: exact files of the footprint.
+   **Todo files per mode (Superior Rules S1–S2, `llm/CLAUDE.md` §10):
+   create `bin/todo_<num>.md` for each selected mode — Immersion, Design
+   (transcribing every box of `llm/RULES.md` §1–§19), Performance
+   (transcribing every applicable box of `llm/PERFORMANCE.md` §1–§13),
+   plus one for verification and one for the report. S3–S6 apply per
+   `llm/CLAUDE.md` §10.**
 2. **Immersion** (if selected): algorithm text vs implementation; no text →
    pass and say so.
 3. **Design** (if selected): walk `llm/RULES.md` top to bottom, every
@@ -90,9 +95,10 @@ Run separately or all step-by-step (user picks; default: all three):
 4. Verdict per checkbox: **Pass / Fail / N/A / Needs-info** with
    `file:line` and, on Fail, a concrete suggested fix.
 5. **Performance** (if selected): per `llm/PERFORMANCE.md`, footprint only.
-6. Verify, don't assume: build; ASan+UBSan combined (one build per
-   compiler); state how each verdict was verified; commands from
-   `llm/DEVELOPMENT.md`.
+6. Verify, don't assume: build (no local sanitizer builds — CI covers
+   them); state how each verdict was verified; commands from
+   `llm/DEVELOPMENT.md` §1 — read its "Environmental pitfalls" (never
+   build in `/tmp`; datasets symlink recipe) before a worktree build.
 7. Flag every deviation with a suggested fix; flag both over-engineering
    and missing core functionality.
 
@@ -130,9 +136,8 @@ label extras as best-practice suggestions.
 - Algorithm contract: `src/core/algorithms/algorithm.h` (`LoadData`,
   `Execute`, `ResetState`)
 - Examples/CI: `examples/datasets`, `examples/test_examples/snapshots`,
-  `.github/workflows/wheel.yml`
-- Sanitizer ignore lists: `address_sanitizer_ignore_list.txt`,
-  `ub_sanitizer_ignore_list.txt`; deps: README "Dependencies"
+  `.github/workflows/wheel.yml` (CI also runs ASan/UBSan)
+- deps: README "Dependencies"
 
 # Questions
 

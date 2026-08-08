@@ -24,6 +24,13 @@ There is no "too small" exemption: every task is tracked in a todo file.
   only `bin/todo_1.md`. Each contains: goal, files touched, acceptance
   criteria, and as many granular checkboxes as possible. Follow-up user
   tasks land in them too.
+- **Every phase todo transcribes its governing checklist** (Superior
+  Rule S2, `llm/CLAUDE.md` §10): Design phases carry every box of
+  `llm/RULES.md` §1–§19, Performance phases every applicable box of
+  `llm/PERFORMANCE.md` §1–§13, verification phases the chain of
+  `llm/DEVELOPMENT.md` §6 — item text "§N — <box text>", statuses per
+  S3–S5 (§10). A phase whose checklist is not transcribed is not
+  started.
 - Execute phases one by one: finish the todo (every checkbox) → run the
   verification pass (`llm/DEVELOPMENT.md` §6) and report commands + results
   → **conditional loop** on failure (fix, re-run from the first failed
@@ -37,9 +44,10 @@ There is no "too small" exemption: every task is tracked in a todo file.
   - The **penultimate task is merging all new branches back into the
     branch where the user called the session** (the perf branch plus any
     `joint/*` branches, conflicts resolved there).
-  - The **last task is always running all tests plus `valgrind`,
-    `helgrind`, and `drd`** (full test suite + memory errors, data races,
-    deadlocks) before reporting done.
+  - The **last task is always running the targeted tests plus `valgrind`,
+    `helgrind`, and `drd`** (`ctest --test-dir build -R "<algo>"` — never
+    the full local suite, it is CI-only per `llm/DEVELOPMENT.md` §2;
+    + memory errors, data races, deadlocks) before reporting done.
 
 ## 3. Performance-target changes → branches
 

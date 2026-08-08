@@ -305,8 +305,10 @@ gate behind a debug flag.
 ## 13. Verification and rules
 
 - [ ] Optimize measured bottlenecks, not guessed ones
-- [ ] Correctness before and after: full tests, ASan/UBSan/TSan/MSan clean
-      builds — never benchmark sanitizer builds
+- [ ] Correctness before and after: the algorithm's targeted tests
+      (`ctest --test-dir build -R "<algo>"`, `llm/DEVELOPMENT.md` §2);
+      ASan/UBSan are CI-only — never benchmark them; no sanitizer builds
+      locally
 - [ ] Differential testing vs a slower reference on small datasets; fuzz
       parsers and candidate generation
 - [ ] Edge cases: empty, one row/column, all-null/duplicate/unique, long
@@ -318,11 +320,13 @@ gate behind a debug flag.
 - [ ] One controlled change per experiment: profile → hypothesize →
       smallest fix → re-benchmark → correctness → keep only if real
 - [ ] Re-profile after every merged change; performance work is iterative
-- [ ] **Final check of every perf task: merge all new branches back into
-      the branch where the user called you, then run all tests plus
-      `valgrind` (memcheck), `helgrind`, and `drd`** — the full suite plus
-      memory errors, data races, deadlocks. These are the penultimate and
-      last tasks of the perf todo file (`llm/PLAN.md` §2)
+- [ ] **Final check of every perf task: per `llm/PLAN.md` §2 — merge all
+      new branches back into the branch where the user called you, then
+      run the **targeted tests** (`ctest --test-dir build -R "<algo>"`;
+      `llm/DEVELOPMENT.md` §2 — never the full suite) plus `valgrind`
+      (memcheck), `helgrind`, and `drd`** — memory errors, data races,
+      deadlocks. These are the penultimate and last tasks of the perf
+      todo file
 
 ## Appendix A. Priority cheat-sheet
 

@@ -54,38 +54,65 @@ Applies to test, perf, and just-check builds alike.
 | `-b` | build benchmarks (`build/target/Desbordante.benchmark`) |
 | `-p` | build Python bindings (pybind11 module) |
 | `-d` | Debug build type |
-| `-s[=S]` / `-C[OPT]` | sanitizer flags (below) |
 
-### Debug build with ASan + UBSan together (one build, never two)
-`-s` takes one sanitizer at a time; combine via CMake overrides — matches
-CI. **One build runs both sanitizers; never two separate sanitizer builds**
-(build time):
+### Test build (Debug, bindings, benchmarks)
+Local build for running tests and examples — no sanitizers (covered by CI):
 
 ```bash
-./build.sh -j4 -f -b -p -d --sanitizer=UB \
-  -C'-DCMAKE_CXX_FLAGS_DEBUG=-fsanitize=address' \
-  -C'-DCMAKE_EXE_LINKER_FLAGS_DEBUG=-fsanitize=address'
+./build.sh -j4 -f -b -p -d
 ```
 
-Notes: `--sanitizer=UB` adds `-fsanitize=undefined`, the `-C` overrides add
-ASan on top. Debug builds print a harmless pybind11 `FutureWarning` about
+Notes: Debug builds print a harmless pybind11 `FutureWarning` about
 `__setstate__` on stderr. Compiler from `build/CMakeCache.txt` (this
 machine: `/opt/gcc-16/bin/c++`). Built module:
 `build/src/python_bindings/desbordante.cpython-<ver>-x86_64-linux-gnu.so`.
 
 ### Two build configurations
-Never benchmark a debug/sanitizer build; never declare a task done from a
+Never benchmark a debug build; never declare a task done from a
 plain Release build.
 
-- **Final test build** (Debug + ASan+UBSan + bindings + benchmarks, matches
-  CI): the combined command above, then `ctest --test-dir build`, example
-  snapshots, and the determinism probe (§2-3). Correctness only — its
-  numbers say nothing about performance.
+- **Final test build** (Debug + bindings + benchmarks): the command above,
+  then **targeted tests only** — `ctest --test-dir build -R "<algo-regex>"`
+  (§2 — never the full suite), example snapshots, and the determinism
+  probe (§2-3). Correctness only — its numbers say nothing about
+  performance. Sanitizers (ASan/UBSan) are run by CI only — no local
+  sanitizer builds.
 - **Performance measurement build** — `./build.sh -p -b -j4 -f`: Release
-  (`-O3 -DNDEBUG`), deliberately no `-d`, no sanitizers, no `-g` — debug
-  symbols and sanitizers consume memory and distort timings. Measure only
-  under the `llm/PLAN.md` §5 protocol. Without `-n` tests are still
-  compiled (not run) — add `-n` if build time matters.
+  (`-O3 -DNDEBUG`), deliberately no `-d`, no `-g` — debug symbols consume
+  memory and distort timings. Measure only under the `llm/PLAN.md` §5
+  protocol. Without `-n` tests are still compiled (not run) — add `-n` if
+  build time matters.
+
+### Environmental pitfalls (verified on this machine — check before building)
+
+- **Never build in `/tmp`** — it is a small tmpfs here (7.5 G). The Debug
+  build exceeds 4.5 G of object files and fills it; symptoms are
+  misleading: `No space left on device` while writing `.o` files, then
+  `as: BFD (GNU Binutils for Ubuntu) 2.46 assertion fail ../../bfd/elf.c:3571`
+  and failing `ar`/link steps that look like a toolchain bug. Check
+  `df -h /tmp /home` first; keep the worktree and `build/` on the main
+  disk (`/home` has 250+ G free here).
+- **Worktree builds need a datasets symlink, correctly made** — `datasets/`
+  is a *tracked* directory (it contains `datasets/CMakeLists.txt`), so a
+  plain `ln -s <repo>/datasets <worktree>/datasets` creates a **nested**
+  symlink (`<worktree>/datasets/datasets`), and configure fails with
+  "Cannot access `<worktree>/datasets/datasets.zip`". Fix: remove the
+  tracked dir first, then symlink:
+  `rm -rf <worktree>/datasets && ln -s <repo>/datasets <worktree>/datasets`
+  (same for any tracked dir you replace with a symlink).
+- **Worktrees live in `bin/`** — `git worktree add bin/<name> <branch>`
+  works (git only blocks an already-used branch); all agent-created dirs
+  stay under `bin/` per `llm/CLAUDE.md` §0. Moving a worktree later bakes
+  old paths into `build/CMakeCache.txt` → full rebuild; place it correctly
+  the first time. `-j6` is safe on this machine (14 Gi RAM, ~1 Gi per
+  compiler job); watch `free -m` and drop back to `-j4` if swap pressure
+  grows.
+- **The branch must be available to the user when work is done** — a
+  branch checked out in a worktree is locked (`git switch <branch>` →
+  `fatal: '<branch>' is already used by worktree at '...'`). After the
+  last commit, free it: `git worktree remove --force bin/<name>` (commit
+  is safe in git; only the local build cache is lost). Do this before
+  reporting done, or the user cannot check the branch out.
 
 ## 2. Running tests for one algorithm
 
@@ -96,7 +123,9 @@ ctest --test-dir build -R "<algo-regex>"
 - `-R` matches test target names (e.g. `<Algo>Determinism.*`,
   `<Algo>Threads.*`); derive from `src/tests/unit/test_<algo>.cpp`. List
   first if unsure: `ctest --test-dir build -N | grep -i <algo>`.
-- Full suite: `ctest --test-dir build` (slow — prefer `-R`).
+- **Never run the full suite locally** (`ctest --test-dir build` without
+  `-R`) — it runs tests for every algorithm and is CI-only; always scope
+  with `-R` to the algorithm under work.
 
 ### Cross-process determinism probe
 Unit tests can miss cross-process reproducibility at the default thread
@@ -105,8 +134,6 @@ Probe: spawn fresh processes with the same seed, assert identical output:
 
 ```bash
 export PYTHONPATH=$PWD/build/src/python_bindings
-export LD_PRELOAD="$(/opt/gcc-16/bin/c++ -print-file-name=libasan.so) $(/opt/gcc-16/bin/c++ -print-file-name=libubsan.so)"
-export ASAN_OPTIONS=detect_leaks=0
 python3 - <<'EOF'
 import subprocess, collections
 script = '''
@@ -134,8 +161,6 @@ check the bindings (`src/python_bindings/<pattern>/`) and examples first.
 ```bash
 export PATH=$PWD/.venv/bin:$PATH
 export PYTHONPATH=$PWD/build/src/python_bindings
-export LD_PRELOAD="$(/opt/gcc-16/bin/c++ -print-file-name=libasan.so) $(/opt/gcc-16/bin/c++ -print-file-name=libubsan.so)"
-export ASAN_OPTIONS=detect_leaks=0
 export MPLBACKEND=Agg   # skip plt.show() in examples
 ```
 
@@ -201,9 +226,7 @@ fix and re-run starting from the first failed check. Record everything in
 
 ```bash
 # 1. Rebuild with the same flags used before the change
-./build.sh -j4 -f -b -p -d --sanitizer=UB \
-  -C'-DCMAKE_CXX_FLAGS_DEBUG=-fsanitize=address' \
-  -C'-DCMAKE_EXE_LINKER_FLAGS_DEBUG=-fsanitize=address'
+./build.sh -j4 -f -b -p -d
 
 # 2. Targeted tests for the touched algorithm(s)
 ctest --test-dir build -R "<algo-regex>"

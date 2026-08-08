@@ -15,7 +15,8 @@ in an interview **before** the review, none mid-review.
    §2): one per phase, for **every** task even small ones (small task →
    just `bin/todo_1.md`); follow-up tasks go into them. Perf tasks: first
    todo = create the perf branch; penultimate = merge all branches back
-   into the branch where the user called you; last = all tests +
+   into the branch where the user called you; last = **targeted tests**
+   (ctest `-R "<algo>"`, never the full suite — CI-only) plus
    valgrind/helgrind/drd.
    **Keep todo checkboxes checked in real time**: mark a step `in_progress`
    before doing it and `completed` immediately after — never batch-update
@@ -36,14 +37,16 @@ in an interview **before** the review, none mid-review.
    measurement logs, review reports, and **every temporary/scratch file**
    (profiling data, dumps, notes, one-off scripts, intermediate artifacts).
    Never the opencode dir, repo root, `llm/`, or `graphify-out/`; if a tool
-   writes elsewhere, copy/redirect into `bin/`.
+   writes elsewhere, copy/redirect into `bin/`. Worktrees go in `bin/` too
+   (`git worktree add bin/<name> <branch>`), and **once the last commit on
+   that branch is done, the worktree is removed so the branch is free for
+   the user** (`git worktree remove --force bin/<name>`; the commit is safe
+   in git, only the local build cache is lost).
 4. **Environment bootstrap** (`llm/DEVELOPMENT.md` §0, fresh machine only):
    `.venv`, requirements, uv, clang-format/cmake-format — then verify.
 5. **Knowledge graph** (§7): ensure `graphify-out/graph.json` exists and is
-   current. Graph tools may be unrunnable (no CLI/API key/long runtime) —
-   **ask the user whether they can run it**; if yes, hand them the exact
-   command and wait for their call-back; if not, use the existing graph
-   and note its vintage when citing.
+   current; if it is missing or has not been updated for a long time, write
+   a warning to the user (§7) — never build or refresh it yourself.
 6. **Build parallelism** (§8): compute CNT_CPU_CORE on this machine; use
    `-j<CNT_CPU_CORE / 2>` for every build (tests, performance, just-check).
 
@@ -88,73 +91,63 @@ All of the following:
 - [ ] Change is surgical — every changed line traces to the request
 - [ ] Code formatted (clang-format v22); CMake formatted if touched
       (`cmake-format --check`)
-- [ ] Build passes (same flags as before); targeted tests pass
-      (`ctest --test-dir build -R "<algo>"`)
-- [ ] Examples + snapshots pass (`pytest ... -k <algo>`; snapshots
-      regenerated via the harness and re-verified if output changed)
-- [ ] Knowledge graph refreshed — `llm/graphify-update` after code changes
-      (§7)
-- [ ] Conditional loop respected — on any failed check: fix, then re-run
-      from the first failed check; nothing skipped or reported as passed
-      without being run
-- [ ] Session log updated with commands + results
-- [ ] Nothing committed (only when explicitly asked); **nothing pushed —
-      `git push` denied in every session, no exceptions (no force-push)**
+- [ ] Verification chain (`llm/DEVELOPMENT.md` §6) run with the
+      conditional loop (§5) — build, targeted tests, examples/snapshots
+- [ ] Session log updated with commands + results (§0)
+- [ ] Nothing committed (only when explicitly asked) or pushed (§9)
 
 ## 7. Knowledge graph (graphify)
 Merged graph of `src/` code, `docs/papers/`, `llm/` docs at
 `graphify-out/graph.json`. Not tracked (per-clone `.git/info/exclude`) — a
 fresh clone has no graph.
 
-- Missing → build it (full `/graphify` skill pipeline, or
-  `llm/graphify-refresh` if `graphify-out/cache/` exists). Stale (code
-  newer) → `llm/graphify-update` first.
-- **Ask the user before any create/update** (may be unrunnable); if they
-  can't, proceed with the existing graph, stating its vintage.
+- The LLM **never creates or updates the graph** — building/refreshing is
+  the user's job (`llm/README.md`, `llm/GRAPHIFY.md`). If the graph is
+  missing or stale (code/docs newer than the graph — check with
+  `find src docs llm -newer graphify-out/graph.json -print -quit`, or the
+  graph has not been updated for a long time), **write a warning to the
+  user** and continue with the existing graph, stating its vintage.
 - Before non-trivial work: `llm/graphify-explain "<component>"`,
   `llm/graphify-path "A" "B"`, `llm/graphify-query "<question>"`,
   `llm/graphify-reflect` — prefer these over greps for structural
-  questions. Dirty `graphify-out/` after updates is expected; skip the
-  graph only for stale-graph tasks or on the user's word.
-- After work: `llm/graphify-update` (free, AST-only); if `docs/` or
-  `docs/papers/` changed, `llm/graphify-refresh` instead (paper layer needs
-  `GEMINI_API_KEY`, else code-only fallback with a warning). Report the
-  refresh in the final summary with node/edge counts.
+  questions. Skip the graph only on the user's word.
 - Graph + Q&A feedback (`graphify-reflect`/`save-result`) + `bin/` session
-  logs are the project's **knowledge base** — it improves only if updates
-  and saved results actually happen.
+  logs are the project's **knowledge base** — it improves only if the user
+  runs updates and saved results actually happen.
 
 ## 8. Build parallelism (CNT_CPU_CORE / 2)
-Before building on any PC: compute CNT_CPU_CORE there (physical cores only,
-hyper-threads excluded, E-cores count; `llm/DEVELOPMENT.md` §1) and use
-`-j<CNT_CPU_CORE / 2>` for **every** build — never reuse `-j` from another
-machine.
+`-j<CNT_CPU_CORE / 2>`, computed on the build machine (§0 item 6); counting
+method and pitfalls: `llm/DEVELOPMENT.md` §1.
 
 ## 9. Autonomy rules — ALWAYS DO / ASK FIRST / NEVER DO
 Every action falls into exactly one bucket; unsure → ASK FIRST.
 
 **ALWAYS DO** (no confirmation needed):
-- Create `bin/todo_<num>.md` files first, for every task (§0) — real files
-  in `bin/`, mirrored in the in-session todo display
+- Create `bin/todo_<num>.md` files first, for every task (§0 item 1) —
+  real files in `bin/`, mirrored in the in-session todo display
 - **Update todo statuses in real time** — `in_progress` before a step,
-  `completed` right after it; never leave checked-off work unchecked (§0);
-  **delete the todo file when all its tasks are done** (§0, `llm/PLAN.md` §2)
+  `completed` right after it (§0 item 1, §10 S3); **delete the todo file
+  when all its tasks are done** (§0 item 1, `llm/PLAN.md` §2)
 - Append every command + result to `bin/session_<YYYY-MM-DD>.md`
+  (§0 item 2)
 - Run the applicable verification chain before reporting done (§5,
   `llm/DEVELOPMENT.md` §6) with the conditional loop
-- Consult the knowledge graph before non-trivial work; `llm/graphify-update`
-  after (§7)
+- Consult the knowledge graph before non-trivial work (§7); warn the user
+  if it is missing or stale
 - Surgical, style-matching edits; clang-format / cmake-format on changed
   files; when a task type repeats, add a fill-in template in
   `llm/templates/`
+- Commit messages (only when a commit is explicitly asked): single-line
+  subject, no description — the repo convention (all history is one-liners)
 
 **ASK FIRST** (destructive, costly, one-way, ambiguous):
 - Deleting files or branches, `git reset`/`git rebase`, dropping data,
   `rm` beyond your own scratch files in `bin/`
-- Paid API calls (e.g. `graphify-refresh` paper extraction), installing
+- Paid API calls, installing
   anything outside `.venv`, long benchmark runs
 - `git commit`, interface/API changes, snapshot regeneration not implied
-  by the requested change, expanding the task's scope
+  by the requested change, expanding the task's scope; multi-line commit
+  messages (description) — repo convention is single-line subjects
 - Multiple interpretations or low certainty — asking is mandatory (§1)
 
 **NEVER DO**:
@@ -164,6 +157,55 @@ Every action falls into exactly one bucket; unsure → ASK FIRST.
   freeze`), `graphify-out/*` (regenerated by graphify tools)
 - Committing or printing secrets (API keys, tokens)
 - Reporting an unrun check as passed
+
+## 10. Superior rules — todo & checklist discipline (S1–S6)
+
+Mandatory in every session. These exist because a multi-phase review
+was once tracked in a single stale todo list with batch-checked boxes
+and a skipped checklist walk — never again. A short mandatory version
+is in the root `CLAUDE.md` (always in context); this section is the
+authoritative full text.
+
+**S1 — Todo files first, one per phase.** The first action of any
+task creates all `bin/todo_<num>.md` files — one per phase, before any
+exploration or tool use. Multi-phase tasks (reviews: one file per mode
+Immersion/Design/Performance plus verification and report; perf tasks:
+per `llm/PLAN.md` §2/§3) MUST have multiple files. A single
+`bin/todo_1.md` is allowed only for genuinely small single-phase tasks.
+
+**S2 — Transcribe the governing checklist into the todo.** Before a
+phase starts, its governing checklist is transcribed into its todo
+file as granular checkboxes: Design → every box of `llm/RULES.md`
+§1–§19; Performance → every applicable box of `llm/PERFORMANCE.md`
+§1–§13; build/tests → the verification chain of
+`llm/DEVELOPMENT.md` §6. Item text = "§N — <box text>" so the report
+can cite it. A phase whose checklist is not transcribed is not started.
+
+**S3 — Real-time statuses, never batch.** Mark a box `in_progress`
+before starting it and `completed` immediately after finishing it.
+Never batch-update boxes at the end of a phase; never leave finished
+work unchecked. The file `bin/todo_<num>.md` and the in-session todo
+display are mirrors — update both in the same message.
+
+**S4 — Walk checklists step by step, in order.** `RULES.md` §1→§19 and
+`PERFORMANCE.md` §1→§13 are processed top to bottom; every box gets a
+verdict (Pass / Fail / N/A / Needs-info). No skipping, no
+cherry-picking, no "I covered that informally".
+
+**S5 — Completed = verified.** A box is `completed` only after its
+verification actually ran (command executed, log inspected, result
+recorded in the session log). Never "completed by assumption".
+
+**S6 — Context guarantee / startup gate.** The root `CLAUDE.md` is
+auto-loaded every session; it mandates, before ANY tool call:
+1. `ls bin/todo_*.md` — per-phase files exist (S1)?
+2. read the tail of the latest `bin/session_<YYYY-MM-DD>.md` — state
+   restored?
+3. missing files → create immediately, transcribing the governing
+   checklist (S2);
+4. statuses live (S3), checklists in order (S4), verified before
+   completed (S5).
+A session that starts without this gate has failed its first rule.
 
 ---
 

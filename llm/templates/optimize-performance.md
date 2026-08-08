@@ -46,10 +46,9 @@
 - [ ] **Penultimate task: merge all new branches into the branch where the
       user called you** — bring the perf branch (and any joint branches)
       back, resolving conflicts there (`llm/PLAN.md` §2/§4)
-- [ ] **Last task: run all tests + `valgrind`, `helgrind`, and `drd`** —
-      the full test suite plus memory errors, data races, and deadlocks —
-      clean before reporting done (`llm/PLAN.md` §2, `llm/PERFORMANCE.md`
-      §13, `llm/DEVELOPMENT.md` §6)
+- [ ] **Last task: run targeted tests + `valgrind`, `helgrind`, and
+      `drd`** — per `llm/PLAN.md` §2 and `llm/DEVELOPMENT.md` §2 (never
+      the full suite — CI-only); clean before reporting done
 
 ## 4. Report
 
