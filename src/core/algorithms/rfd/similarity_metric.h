@@ -14,7 +14,7 @@ public:
     virtual double Compare(std::string const& a, std::string const& b) const = 0;
 };
 
-class FunctionSimilarityMetric : public SimilarityMetric {
+class DESBORDANTE_EXPORT FunctionSimilarityMetric : public SimilarityMetric {
 public:
     using Func = std::function<double(std::string const&, std::string const&)>;
     explicit FunctionSimilarityMetric(Func func);
@@ -24,9 +24,9 @@ private:
     Func func_;
 };
 
-std::shared_ptr<SimilarityMetric> LevenshteinMetric();
-std::shared_ptr<SimilarityMetric> EqualityMetric();
-std::shared_ptr<SimilarityMetric> AbsoluteDifferenceMetric();
-std::shared_ptr<SimilarityMetric> AbsoluteThresholdMetric(double diff);
+DESBORDANTE_EXPORT std::shared_ptr<SimilarityMetric> LevenshteinMetric();
+DESBORDANTE_EXPORT std::shared_ptr<SimilarityMetric> EqualityMetric();
+DESBORDANTE_EXPORT std::shared_ptr<SimilarityMetric> AbsoluteDifferenceMetric();
+DESBORDANTE_EXPORT std::shared_ptr<SimilarityMetric> AbsoluteThresholdMetric(double diff);
 
 }  // namespace algos::rfd
