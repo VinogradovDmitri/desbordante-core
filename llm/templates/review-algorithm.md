@@ -8,23 +8,30 @@
 
 ## 0. Interview (before the review — ask the user *all* of this)
 
-> Standing defaults are in `llm/AGENT.md` "Review defaults" — only ask what
-> deviates. Record the answers here; delete questions that don't apply.
+> Five parts, all up front. Standing defaults are in `llm/AGENT.md`
+> "Review defaults" — confirm what deviates. Record the answers below;
+> delete parts that don't apply. **No questions during the review.**
 
-- [ ] Mode(s): **Immersion / Design / Performance** — one or all three
-      step-by-step?
-- [ ] Under review: `<branch / commit / PR>` — which exactly?
-- [ ] Algorithm text: provided where (`docs/papers/…` / pasted in chat)?
-      **If none is provided, the Immersion check is passed** (state it in
-      the report)
-- [ ] Scope: user-specified or inferred from the diff?
-- [ ] Tests: default is **build only, no tests** — build and run profiling
-      tools (perf, valgrind/callgrind, helgrind/drd) on the binaries; no
-      `ctest` or examples/snapshots — or something different for this
-      review?
-- [ ] Performance: any numeric targets / hot spots / datasets of interest?
+- [ ] **1. Mode(s)** (multiple choice): Immersion / Design / Performance —
+      one, several, or all three step-by-step? → `<answer>`
+  - [ ] *(If Immersion)* algorithm text provided where: pasted in chat /
+        `docs/papers/…` path / none? **None → Immersion passes** (state it
+        in the report)
+- [ ] **2. Target** (single choice): branch / commit / PR — which exactly?
+      → `<answer>`
+- [ ] **3. Delivery** (single choice): (a) fix-and-commit in a git worktree
+      under `bin/` on a branch, or (b) report-only — no code changes, write
+      `bin/report_<YYYY-MM-DD_HHMM>.txt`? → `<answer>`
+- [ ] **4. Verification** (multiple choice): build / pattern (unit) tests
+      (`ctest -R`) / Python tests / snapshots — which to run? (default:
+      build only) → `<answer>`
+- [ ] **5. Measurement dataset** (Performance only — multiple choice):
+      proposed datasets `<list>`; user picks `<selection>`; a temporary
+      `src/tests/unit/test_<algo>_perf_probe.cpp` is created and **deleted
+      after all todos are done** → `<answer>`
+- [ ] Scope: user-specified or inferred from the diff? → `<answer>`
 - [ ] Known issues the user is already aware of (not to re-report)?
-- [ ] Output: separate report per mode (default) or combined?
+      → `<answer>`
 - [ ] Anything else relevant? `<notes>`
 
 Answers: `<record them here>`
@@ -48,6 +55,13 @@ Answers: `<record them here>`
   - `src/tests/unit/test_<…>.cpp` — `<files>`
   - `CMakeLists.txt` — `<which>`
   - `examples/…` + `examples/test_examples/snapshots` — `<files>`
+
+### Coverage matrix (every footprint file × reviewed × mode)
+
+| File | Immersion | Design | Performance | Verdict |
+|---|---|---|---|---|
+| `<file path>` | Y/N | Y/N | Y/N | `<Pass/Fail/N/A>` |
+| `<…>` | | | | |
 
 ## 3. Toolchain matrix results
 
@@ -89,11 +103,15 @@ profiling / inspection only).
 
 ## 5. Findings
 
-Produce in this order (severity rules: `llm/AGENT.md` "Output format"):
+Produce in this order (severity rules + evidence: `llm/AGENT.md`
+"Output format"). **Report-only mode:** every Fail must include
+citation + quoted code + why + suggested fix. **Fix-and-commit mode:**
+fix each issue, one commit per issue, propose squash at end — no
+quoted-code report.
 
 ### Blocking
-`<correctness bugs, UB, portability breakage, contract violations —
-file:line + suggested fix, or "none">`
+`<correctness bugs, UB, portability breakage, contract violations,
+data races — file:line + quoted code + suggested fix, or "none">`
 
 ### Major
 `<style/CMake/logging/binding/example/performance issues, or "none">`
@@ -112,6 +130,26 @@ file:line + suggested fix, or "none">`
 
 ## 7. Second pass (before submitting)
 
-- [ ] Re-checked every finding against its cited `RULES.md` checkbox and
-      the severity ordering (blocking → major → nits) — fresh read, or a
-      second reviewer/model. Findings fixed or explicitly waived: `<notes>`
+A fresh pass (or second reviewer/model) checking three things
+(`llm/AGENT.md` "Second pass"):
+
+- [ ] **False positives** — re-verified every Fail against the actual
+      code; any that don't violate the cited rule downgraded to Pass or
+      Needs-info → `<notes>`
+- [ ] **Severity calibration** — each finding correctly tiered per the
+      severity table; promoted/demoted as needed → `<notes>`
+- [ ] **Coverage** — every footprint file has ≥1 verdict; every
+      `RULES.md` section has a row in the §4 table; every verification
+      step from the interview has a result; gaps filled → `<notes>`
+
+## 8. Not checked
+
+Explicit list of what was **not** run, with reason (per `llm/CLAUDE.md`
+§5 — "say what you did not verify"):
+
+- [ ] Footprint files not reviewed: `<files or "none">`
+- [ ] `RULES.md` sections skipped: `<sections or "none">`
+- [ ] Verification not run (from interview part 4): `<steps or "none">`
+      — reason: `<why>`
+- [ ] Toolchain configs not built: `<configs or "none">`
+- [ ] Profiling tools not run: `<tools or "none">`

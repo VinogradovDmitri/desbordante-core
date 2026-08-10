@@ -9,6 +9,8 @@ The full project guidance lives in `llm/` — read these when working in this re
 - `llm/PLAN.md` — phase/todo workflow for huge tasks, perf branches, measurement protocol
 - `llm/PERFORMANCE.md` — performance optimization checklist for data-profiling algorithms
 - `llm/GRAPHIFY.md` — knowledge graph usage guide (`graphify-out/`, `llm/` wrapper scripts)
+- `llm/PREWORK.sh` — sudo/install commands the **user** runs (env setup, profiling tools, benchmark protocol) — the LLM cannot run `sudo` or install software; `llm/todo_0.md` checks these have been run
+- `llm/todo_0.md` — environment-check template (phase 0, copied to `bin/todo_0.md` before any `todo_1.md`)
 - `llm/templates/` — fill-in task templates (review, implement, optimize performance)
 
 ## Superior Rules — always in context (S1–S6)
@@ -18,6 +20,11 @@ Todo & checklist discipline is governed by the Superior Rules S1–S6
 including review sessions.
 
 **Startup gate (S6) — run BEFORE any tool call:**
+0. **PREWORK check** — `mkdir -p bin && cp llm/todo_0.md bin/todo_0.md`,
+   check every applicable box (`llm/PREWORK.sh` has the sudo/install
+   commands). If any check fails, **stop** and ask the user to run the
+   relevant PREWORK section; do not proceed to `todo_1.md` until
+   `bin/todo_0.md` is fully checked and deleted.
 1. `ls bin/todo_*.md` — one todo file per phase must exist (S1)
 2. read the tail of the latest `bin/session_<YYYY-MM-DD>.md` — restore state
 3. missing per-phase todo files → create immediately, transcribing the
