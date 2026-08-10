@@ -21,7 +21,7 @@ uv pip install -r llm/requirements.txt
 # B. Profiling tools (install if missing — needed for Performance mode)
 sudo apt install linux-tools-common linux-tools-$(uname -r)
 sudo apt install valgrind
-sudo apt install cpuset
+sudo apt install util-linux   # provides taskset (usually pre-installed)
 sudo apt install heaptrack
 git clone https://github.com/brendangregg/FlameGraph.git ~/FlameGraph
 git clone https://github.com/andikleen/pmu-tools.git ~/pmu-tools
@@ -41,4 +41,6 @@ HALF_FREQ=$((MAX_FREQ / 2))
 echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq
 echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq
 cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq
-sudo cset shield -c 1-4 -k on
+# taskset pins the measurement command to cores 1-4 (adjust) — no
+# shield needed; pass the CPU list directly:
+#   taskset -c 1-4 perf stat -r 10 <cmd>

@@ -22,12 +22,15 @@ No "too small" exemption: every task is tracked in a todo file.
 - **Creating all todo files is always the first task** (`llm/CLAUDE.md`
   §0): `bin/todo_1.md` … `bin/todo_N.md` — one per phase; each contains
   goal, files touched, acceptance criteria, granular checkboxes.
-  Follow-up user tasks land in them too. **Before** these, the PREWORK
-  check runs: `cp llm/todo_0.md bin/todo_0.md` — verify the environment
-  (`llm/PREWORK.sh`); if any check fails, **stop** and ask the user to run
-  the relevant PREWORK section; do not proceed to `todo_1.md` until
-  `bin/todo_0.md` is fully checked and deleted (`llm/CLAUDE.md` §0
-  item 0, §10 S6).
+  Follow-up user tasks land in them too. **Review tasks:** the interview
+  happens first (tracked in `bin/todo_tmp_<num>.md`), then all
+  `bin/todo_<num>.md` are created from the interview answers, then run
+  in order (`llm/AGENT.md` "Review workflow"). **Before** these, the
+  PREWORK check runs: `mkdir -p bin && cp llm/todo_0.md bin/todo_0.md` —
+  verify the environment (`llm/PREWORK.sh`); if any check fails, **stop**
+  and ask the user to run the relevant PREWORK section; do not proceed
+  to `todo_1.md` until `bin/todo_0.md` is fully checked and deleted
+  (`llm/CLAUDE.md` §0 item 0, §10 S6).
 - **Every phase todo transcribes its governing checklist** (S2,
   `llm/CLAUDE.md` §10): item text "§N — <box text>"; statuses per
   S3–S5. **Design/Performance shortcuts:** pre-transcribed templates
@@ -117,11 +120,9 @@ echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_fr
 echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq
 cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq   # verify
 
-# 6. Isolate cores 1-4 for the measurement (adjust)
-sudo cset shield -c 1-4 -k on
-
-# 7. Measure: 10 repetitions, isolated cores, pinned frequency
-cset shield --exec -- perf stat -r 10 <cmd>
+# 6. Measure: 10 repetitions, pinned to cores 1-4 (adjust),
+#    pinned frequency
+taskset -c 1-4 perf stat -r 10 <cmd>
 ```
 
 Notes:
@@ -132,5 +133,5 @@ Notes:
 - Compare runs only under the same protocol and machine state. Record
   raw numbers in the todo file next to the expected improvement, and
   append them — with the machine state (governor, pinned frequency,
-  isolated cores, ASLR off) — to
+  pinned cores, ASLR off) — to
   `bin/measurements_<YYYY-MM-DD>.md`.

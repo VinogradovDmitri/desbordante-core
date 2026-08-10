@@ -32,7 +32,7 @@
 
 - [ ] `perf` available: `which perf` or `perf --version`
 - [ ] `valgrind` available: `which valgrind`
-- [ ] (benchmark only) `cset` available: `which cset`
+- [ ] (benchmark only) `taskset` available: `which taskset`
 - [ ] (allocation profiling) `heaptrack` available: `which heaptrack`
 
 ## C. Benchmark measurement protocol (benchmark sessions only — PREWORK §C)

@@ -51,7 +51,7 @@ file is fully checked, and it is deleted.
 - [ ] §1 — Define performance targets before optimizing (max wall time,
       peak memory, throughput rows/s and cells/s, scaling)
 - [ ] §1 — Measurement protocol: `llm/PLAN.md` §5 (pinned frequency,
-      isolated cores, caches dropped, `perf stat -r 10`, median). Never
+      pinned cores, caches dropped, `perf stat -r 10`, median). Never
       compare runs from different machine states
 - [ ] §1 — Separate parsing vs algorithm timing; cold-cache vs
       warm-cache runs

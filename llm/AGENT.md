@@ -121,10 +121,13 @@ The interview has **five parts** (all up front):
    commands the LLM cannot run); do not proceed until `bin/todo_0.md` is
    fully checked and deleted (`llm/CLAUDE.md` §0 item 0, §10 S6).
 1. **Interview** the user — the five parts above (mode(s), target,
-   delivery, verification, measurement dataset). No further questions
-   during the review.
-2. Establish scope: exact files of the footprint. **Read the full
-   diff** of the target (branch/commit/PR) before any verdict —
+   delivery, verification, measurement dataset). Track the interview in
+   `bin/todo_tmp_1.md` (a temporary todo); **delete `bin/todo_tmp_1.md`
+   when the interview is done**. No further questions during the review
+   itself — mid-review ambiguity → Needs-info.
+2. **Create all todo files** from the interview answers, then run them
+   in order. Establish scope: exact files of the footprint. **Read the
+   full diff** of the target (branch/commit/PR) before any verdict —
    distinguish intent from accident. **Graphify required:** run
    `llm/graphify-explain "<algo>"` and `llm/graphify-path "<algo>"
    "bindings"` before verdicts — structural questions answered by the
@@ -135,7 +138,9 @@ The interview has **five parts** (all up front):
    `llm/todo_rules_<num>.md` and `llm/todo_perf_<num>.md` exist — copy
    the needed ones into `bin/` and walk them per `llm/CLAUDE.md` §10 S2
    (including the commit-based workflow for Performance). Delete each
-   `bin/` copy once all its boxes are `completed` (S1).
+   `bin/` copy once all its boxes are `completed` (S1). **Mid-work
+   questions OK** if the answer affects remaining todos — ask, then
+   update the todos.
 3. **Worktree** (delivery = fix-and-commit, or Performance mode):
    `git worktree add bin/<name> <branch>`; build there with the
    `datasets/` symlink recipe (`llm/DEVELOPMENT.md` §1). Report-only

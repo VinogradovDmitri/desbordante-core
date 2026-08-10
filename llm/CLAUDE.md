@@ -18,7 +18,10 @@ questions in an interview **before** the review, none mid-review.
    `bin/todo_0.md` is fully checked and deleted.
 1. **Todo files** — create all `bin/todo_<num>.md` up front
    (`llm/PLAN.md` §2): one per phase, for **every** task (small →
-   just `bin/todo_1.md`); follow-ups go into them. Perf tasks: first
+   just `bin/todo_1.md`); follow-ups go into them. **Review tasks:**
+   the interview happens first (tracked in `bin/todo_tmp_<num>.md`),
+   then all `bin/todo_<num>.md` are created from the interview answers,
+   then run in order — see `llm/AGENT.md` "Review workflow". Perf tasks: first
    = create the perf branch; penultimate = merge all branches back;
    last = **targeted tests** (`ctest -R "<algo>"`, never the full
    suite — CI-only) + valgrind/helgrind/drd.
@@ -150,6 +153,12 @@ Mandatory in every session. Brief version in root `CLAUDE.md`
 use. Multi-phase tasks (reviews: one per mode + verification + report;
 perf: per `llm/PLAN.md` §2/§3) MUST have multiple files. A single
 `bin/todo_1.md` only for genuinely small single-phase tasks.
+**Review exception:** the interview is tracked in
+`bin/todo_tmp_<num>.md` (a temporary todo) — conduct the interview,
+delete the `todo_tmp` file, then create all real `bin/todo_<num>.md`
+from the interview answers and run them in order. **Mid-work
+questions OK:** if something needs asking during todo execution and
+the answer affects remaining todos, ask — then update the todos.
 
 **S2 — Transcribe the governing checklist into the todo.** Before a
 phase starts, transcribe its governing checklist as granular
@@ -192,12 +201,15 @@ recorded in the session log). Never "completed by assumption".
 llm/todo_0.md bin/todo_0.md` — PREWORK environment check; if any box
 fails, **stop** and ask the user to run the relevant `llm/PREWORK.sh`
 section (`llm/CLAUDE.md` §0 item 0) — do not proceed until
-`bin/todo_0.md` is fully checked and deleted; (1) `ls bin/todo_*.md` —
-per-phase files exist (S1)? (2) read the tail of the latest
-`bin/session_<YYYY-MM-DD>.md` — state restored? (3) missing → create
-immediately, transcribing the governing checklist (S2); (4) statuses
-live (S3), checklists in order (S4), verified before completed (S5).
-A session that starts without this gate has failed its first rule.
+`bin/todo_0.md` is fully checked and deleted; (1) for review tasks,
+create `bin/todo_tmp_<num>.md` for the interview, conduct it, delete
+the `todo_tmp` file, then create all `bin/todo_<num>.md`; for other
+tasks, `ls bin/todo_*.md` — per-phase files exist (S1)? (2) read the
+tail of the latest `bin/session_<YYYY-MM-DD>.md` — state restored?
+(3) missing → create immediately, transcribing the governing
+checklist (S2); (4) statuses live (S3), checklists in order (S4),
+verified before completed (S5). A session that starts without this
+gate has failed its first rule.
 
 ---
 

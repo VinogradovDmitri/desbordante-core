@@ -25,14 +25,18 @@ including review sessions.
    commands). If any check fails, **stop** and ask the user to run the
    relevant PREWORK section; do not proceed to `todo_1.md` until
    `bin/todo_0.md` is fully checked and deleted.
-1. `ls bin/todo_*.md` — one todo file per phase must exist (S1)
+1. **Review tasks:** create `bin/todo_tmp_<num>.md` for the interview,
+   conduct it, delete the `todo_tmp` file, then create all
+   `bin/todo_<num>.md` from the interview answers. **Other tasks:**
+   `ls bin/todo_*.md` — one todo file per phase must exist (S1)
 2. read the tail of the latest `bin/session_<YYYY-MM-DD>.md` — restore state
 3. missing per-phase todo files → create immediately, transcribing the
    governing checklist (RULES.md / PERFORMANCE.md / DEVELOPMENT.md §6)
    into them as granular checkboxes (S2)
 4. statuses updated in real time, never batch-checked (S3); checklists
    walked top-to-bottom in order (S4); a box is `completed` only after
-   its verification actually ran (S5)
+   its verification actually ran (S5). Mid-work questions OK if the
+   answer affects remaining todos.
 
 A session that starts without this gate has failed its first rule.
 
