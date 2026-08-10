@@ -14,8 +14,11 @@
 > - Mark a checkbox `in_progress` before checking it, `completed`
 >   immediately after (S3); keep `bin/todo_0.md` and the in-session
 >   display in sync.
-> - Skip sections that don't apply to this session (mark N/A), but
->   **never skip a section that applies and leave it unchecked**.
+> - **Check only sections that apply** — never mark non-applicable
+>   sections "N/A"; just leave them unchecked. For review tasks, which
+>   sections apply is determined by the **interview** (e.g. section B
+>   applies only if Performance mode was selected) — so the interview
+>   runs first, then the applicable sections are checked.
 > - **Delete `bin/todo_0.md`** once all applicable checks pass — phase 0
 >   is done, proceed to `bin/todo_1.md` (S1).
 

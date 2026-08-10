@@ -115,17 +115,20 @@ The interview has **five parts** (all up front):
 
 ## Review workflow
 
-0. **PREWORK check** — `mkdir -p bin && cp llm/todo_0.md bin/todo_0.md`,
-   check every applicable box. If any check **fails**, **stop** and ask
-   the user to run the relevant `llm/PREWORK.sh` section (sudo/install
-   commands the LLM cannot run); do not proceed until `bin/todo_0.md` is
-   fully checked and deleted (`llm/CLAUDE.md` §0 item 0, §10 S6).
+0. **Copy PREWORK template** — `mkdir -p bin && cp llm/todo_0.md
+   bin/todo_0.md`. Check section A (always applies) now; sections B/C
+   are checked after the interview (they depend on the selected modes).
 1. **Interview** the user — the five parts above (mode(s), target,
    delivery, verification, measurement dataset). Track the interview in
    `bin/todo_tmp_1.md` (a temporary todo); **delete `bin/todo_tmp_1.md`
    when the interview is done**. No further questions during the review
    itself — mid-review ambiguity → Needs-info.
-2. **Create all todo files** from the interview answers, then run them
+2. **Check remaining PREWORK sections** based on interview answers:
+   Performance mode → section B (profiling tools); benchmark → section
+   C (measurement protocol). If any check **fails**, **stop** and ask
+   the user to run the relevant `llm/PREWORK.sh` section. Then **delete
+   `bin/todo_0.md`** (`llm/CLAUDE.md` §0 item 0, §10 S6).
+3. **Create all todo files** from the interview answers, then run them
    in order. Establish scope: exact files of the footprint. **Read the
    full diff** of the target (branch/commit/PR) before any verdict —
    distinguish intent from accident. **Graphify required:** run
@@ -141,17 +144,17 @@ The interview has **five parts** (all up front):
    `bin/` copy once all its boxes are `completed` (S1). **Mid-work
    questions OK** if the answer affects remaining todos — ask, then
    update the todos.
-3. **Worktree** (delivery = fix-and-commit, or Performance mode):
+4. **Worktree** (delivery = fix-and-commit, or Performance mode):
    `git worktree add bin/<name> <branch>`; build there with the
    `datasets/` symlink recipe (`llm/DEVELOPMENT.md` §1). Report-only
    reviews need no worktree.
-4. **Performance probe** (Performance mode only): create the temporary
+5. **Performance probe** (Performance mode only): create the temporary
    `src/tests/unit/test_<algo>_perf_probe.cpp` for the measurement
    dataset(s) chosen in interview part 5; **delete it after all todos
    are done**.
-5. **Immersion** (if selected): algorithm text vs implementation; no
+6. **Immersion** (if selected): algorithm text vs implementation; no
    text → pass and say so.
-6. **Design** (if selected): walk `llm/RULES.md` top to bottom, every
+7. **Design** (if selected): walk `llm/RULES.md` top to bottom, every
    checkbox — special attention to Bindings (§9–10) and Pattern
    objects (§17); code alignment, logic, standards, branchless code,
    bugs, typos, clarity. **Before verdicts:** read
@@ -165,9 +168,9 @@ The interview has **five parts** (all up front):
    check how 1–2 similar existing algorithms handle it via
    `llm/graphify-explain` / `llm/graphify-path`; unexplained deviation
    from precedent is a finding (deviation with reason is not).
-7. Verdict per checkbox: **Pass / Fail / N/A / Needs-info** with
+8. Verdict per checkbox: **Pass / Fail / N/A / Needs-info** with
    `file:line` and, on Fail, a concrete suggested fix.
-8. **Performance** (if selected): per `llm/PERFORMANCE.md`, footprint
+9. **Performance** (if selected): per `llm/PERFORMANCE.md`, footprint
    only. **Determinism probe required** (`llm/DEVELOPMENT.md` §2):
    run the 30-process cross-process probe — a data race is a
    **Blocking** finding even if the perf review is otherwise clean.
@@ -175,19 +178,19 @@ The interview has **five parts** (all up front):
    (memory errors), `helgrind` and `drd` (data races, deadlocks) —
    any error is Blocking. Profiling tools (`perf`, callgrind) confirm
    suspected hot spots before reporting.
-9. **Delivery**: fix-and-commit → fix each issue straight in the
-   worktree, **one commit per issue** (single-line subject, only when
-   explicitly asked); at the end **propose squashing** the commits into
-   one; then free the worktree (`git worktree remove --force
-   bin/<name>`). Report-only → write
-   `bin/report_<YYYY-MM-DD_HHMM>.txt` (findings + quoted code +
-   suggested fixes + rationale), zero code changes.
-10. Verify, don't assume: run the verification selected in interview
+10. **Delivery**: fix-and-commit → fix each issue straight in the
+    worktree, **one commit per issue** (single-line subject, only when
+    explicitly asked); at the end **propose squashing** the commits into
+    one; then free the worktree (`git worktree remove --force
+    bin/<name>`). Report-only → write
+    `bin/report_<YYYY-MM-DD_HHMM>.txt` (findings + quoted code +
+    suggested fixes + rationale), zero code changes.
+11. Verify, don't assume: run the verification selected in interview
     part 4 (no local sanitizer builds — CI covers them); state how each
     verdict was verified; commands from `llm/DEVELOPMENT.md` §1 — read
     its "Environmental pitfalls" (never build in `/tmp`; datasets
     symlink recipe) before a worktree build.
-11. Flag every deviation with a suggested fix; flag both
+12. Flag every deviation with a suggested fix; flag both
     over-engineering and missing core functionality.
 
 ## Output format (per mode)

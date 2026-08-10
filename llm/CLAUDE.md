@@ -11,11 +11,15 @@ questions in an interview **before** the review, none mid-review.
 
 ## 0. Startup checklist (any machine, in order)
 
-0. **PREWORK check** — `mkdir -p bin && cp llm/todo_0.md bin/todo_0.md`,
-   check every applicable box. If any check **fails**, **stop** and ask
-   the user to run the relevant `llm/PREWORK.sh` section (sudo/install commands
-   the LLM cannot run); do not proceed to `bin/todo_1.md` until
-   `bin/todo_0.md` is fully checked and deleted.
+0. **PREWORK check** — `mkdir -p bin && cp llm/todo_0.md bin/todo_0.md`.
+   **Non-review tasks:** check every applicable box now; if any check
+   **fails**, **stop** and ask the user to run the relevant
+   `llm/PREWORK.sh` section; do not proceed to `bin/todo_1.md` until
+   `bin/todo_0.md` is fully checked and deleted. **Review tasks:**
+   copy the template now but **check only section A** (always applies);
+   sections B/C depend on the interview answers (Performance mode → B,
+   benchmark → C) — the interview runs first (item 1 below), then the
+   applicable sections are checked, then `bin/todo_0.md` is deleted.
 1. **Todo files** — create all `bin/todo_<num>.md` up front
    (`llm/PLAN.md` §2): one per phase, for **every** task (small →
    just `bin/todo_1.md`); follow-ups go into them. **Review tasks:**
@@ -198,15 +202,20 @@ verification actually ran (command executed, log inspected, result
 recorded in the session log). Never "completed by assumption".
 
 **S6 — Startup gate.** Before ANY tool call: **(0)** `mkdir -p bin && cp
-llm/todo_0.md bin/todo_0.md` — PREWORK environment check; if any box
+llm/todo_0.md bin/todo_0.md` — copy the PREWORK template. **Review
+tasks:** check section A (always applies) now, then proceed to the
+interview **before** checking sections B/C — which sections apply
+depends on the interview answers (Performance → B, benchmark → C).
+**Non-review tasks:** check all applicable sections now; if any box
 fails, **stop** and ask the user to run the relevant `llm/PREWORK.sh`
 section (`llm/CLAUDE.md` §0 item 0) — do not proceed until
 `bin/todo_0.md` is fully checked and deleted; (1) for review tasks,
 create `bin/todo_tmp_<num>.md` for the interview, conduct it, delete
-the `todo_tmp` file, then create all `bin/todo_<num>.md`; for other
-tasks, `ls bin/todo_*.md` — per-phase files exist (S1)? (2) read the
-tail of the latest `bin/session_<YYYY-MM-DD>.md` — state restored?
-(3) missing → create immediately, transcribing the governing
+the `todo_tmp` file, then check remaining applicable PREWORK sections
+(B/C), delete `bin/todo_0.md`, then create all `bin/todo_<num>.md`;
+for other tasks, `ls bin/todo_*.md` — per-phase files exist (S1)?
+(2) read the tail of the latest `bin/session_<YYYY-MM-DD>.md` — state
+restored? (3) missing → create immediately, transcribing the governing
 checklist (S2); (4) statuses live (S3), checklists in order (S4),
 verified before completed (S5). A session that starts without this
 gate has failed its first rule.

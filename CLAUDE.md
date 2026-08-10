@@ -20,15 +20,18 @@ Todo & checklist discipline is governed by the Superior Rules S1–S6
 including review sessions.
 
 **Startup gate (S6) — run BEFORE any tool call:**
-0. **PREWORK check** — `mkdir -p bin && cp llm/todo_0.md bin/todo_0.md`,
-   check every applicable box (`llm/PREWORK.sh` has the sudo/install
-   commands). If any check fails, **stop** and ask the user to run the
-   relevant PREWORK section; do not proceed to `todo_1.md` until
-   `bin/todo_0.md` is fully checked and deleted.
+0. **PREWORK check** — `mkdir -p bin && cp llm/todo_0.md bin/todo_0.md`.
+   **Review tasks:** check section A (always) now, then interview
+   **before** checking B/C (which apply depends on interview answers).
+   **Other tasks:** check all applicable sections now. If any check
+   fails, **stop** and ask the user to run the relevant PREWORK
+   section; do not proceed to `todo_1.md` until `bin/todo_0.md` is
+   fully checked and deleted.
 1. **Review tasks:** create `bin/todo_tmp_<num>.md` for the interview,
-   conduct it, delete the `todo_tmp` file, then create all
-   `bin/todo_<num>.md` from the interview answers. **Other tasks:**
-   `ls bin/todo_*.md` — one todo file per phase must exist (S1)
+   conduct it, delete the `todo_tmp` file, then check remaining
+   applicable PREWORK sections (B/C), delete `bin/todo_0.md`, then
+   create all `bin/todo_<num>.md` from the interview answers. **Other
+   tasks:** `ls bin/todo_*.md` — one todo file per phase must exist (S1)
 2. read the tail of the latest `bin/session_<YYYY-MM-DD>.md` — restore state
 3. missing per-phase todo files → create immediately, transcribing the
    governing checklist (RULES.md / PERFORMANCE.md / DEVELOPMENT.md §6)
