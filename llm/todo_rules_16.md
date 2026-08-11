@@ -30,7 +30,10 @@ file is fully checked, and it is deleted.
 
 ## §16 — Option & exception types (visibility)
 
-- [ ] §16 — Non-standard option types and exception types marked
-      `DESBORDANTE_EXPORT`
+- [ ] §16 — Mark all non-C++-standard types used as template parameter for 
+      config::Option<T> with DESBORDANTE_EXPORT 
+      (defined in src/core/util/export.h) to avoid macOS linking issues. 
+      Typical symptoms are errors like "Incorrect type for option ..." or 
+      "Cannot get type for option ..."
 - [ ] §16 — New option type registered in `py_to_any.cpp` (mandatory), in
       `opt_to_py.cpp` (when possible)

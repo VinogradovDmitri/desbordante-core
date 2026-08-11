@@ -135,8 +135,11 @@ Checklist of checkable requirements. Review every box, in order. See
       `#if SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_DEBUG`, kept at DEBUG+
 
 ## 16. Option & exception types (visibility)
-- [ ] Non-standard option types and exception types marked
-      `DESBORDANTE_EXPORT`
+- [ ] Mark all non-C++-standard types used as template parameter for 
+      config::Option<T> with DESBORDANTE_EXPORT 
+      (defined in src/core/util/export.h) to avoid macOS linking issues. 
+      Typical symptoms are errors like "Incorrect type for option ..." or 
+      "Cannot get type for option ..."
 - [ ] New option type registered in `py_to_any.cpp` (mandatory), in
       `opt_to_py.cpp` (when possible)
 
