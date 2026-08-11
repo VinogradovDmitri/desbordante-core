@@ -3,14 +3,12 @@
 #include <cstdint>
 #include <string>
 
-#include "core/util/export.h"
-
 namespace algos::rfd {
 
 // Masks use uint32_t -> max 31 attributes (31 bits + RHS can't overlap)
 static constexpr std::size_t kMaxAttributes = 31;
 
-struct DESBORDANTE_EXPORT RFD {
+struct RFD {
     uint32_t lhs_mask = 0;
     uint8_t rhs_index = 0;
     double support = 0.0;
@@ -30,7 +28,7 @@ struct DESBORDANTE_EXPORT RFD {
     [[nodiscard]] std::string ToString() const;
 };
 
-struct DESBORDANTE_EXPORT RFDHash {
+struct RFDHash {
     std::size_t operator()(const RFD& rfd) const {
         return (static_cast<std::size_t>(rfd.lhs_mask) << 8) | rfd.rhs_index;
     }
