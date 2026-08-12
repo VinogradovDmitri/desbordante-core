@@ -44,3 +44,6 @@ cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq
 # taskset pins the measurement command to cores 1-4 (adjust) — no
 # shield needed; pass the CPU list directly:
 #   taskset -c 1-4 perf stat -r 10 <cmd>
+
+sudo sysctl kernel.perf_event_paranoid=1
+sudo sysctl kernel.kptr_restrict=0
