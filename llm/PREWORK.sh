@@ -36,10 +36,8 @@ for i in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
   echo performance | sudo tee $i
 done
 echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
-MAX_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)
-HALF_FREQ=$((MAX_FREQ / 2))
-echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq
-echo "$HALF_FREQ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq
+echo 1200000 | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq
+echo 1200000 | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq
 cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq
 # taskset pins the measurement command to cores 1-4 (adjust) — no
 # shield needed; pass the CPU list directly:
