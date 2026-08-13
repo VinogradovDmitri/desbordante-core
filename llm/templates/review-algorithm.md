@@ -119,6 +119,38 @@ fix each issue, one commit per issue, and propose squash at end. **`patches`
 mode:** emit one stable numbered patch per issue and verify the complete
 series.
 
+> `report.md` is a plain list of issues — **no sorting required**: append
+> each new issue immediately when found, with its delivery artifact
+> (`commits`/`patches` modes) at the same time. Every entry follows the
+> per-issue template in `llm/AGENT.md` "Output format" →
+> "`report.md` per-issue template" (name + type, why-it-is-an-issue with
+> navigable proof, files & ranges, suggested fix per output mode, perf
+> impact for performance issues).
+
+### Issue template (fill-in — copy per issue, in discovery order)
+
+```markdown
+### <NN>. <Issue name>
+
+- **Type**: `Blocking` | `Major` | `Minor` (`nit: <…>`)
+- **Files & ranges**: `<path>:<start>-<end>`
+
+**Why it is an issue**:
+- <what the code does → why it is wrong>
+- Proof — <navigation to it, one of>:
+  - `RULES.md` §N "<checkbox text>" (verdict row `<path>:<line>`)
+  - tool log `bin/<helgrind|drd|valgrind|perf|…>.log` lines <x-y> — <what it shows>
+  - measurement files `bin/<…>:<lines>` — <result>
+  - Immersion text "<quoted sentence>" vs `<path>:<line>` — <difference>
+
+**Suggested fix** (`report`: fenced code block; `commits`: commit <hash>;
+`patches`: `bin/patches/<NN>-<name>.patch`):
+<…>
+
+**Perf impact** (perf issues only): `bin/<measurement file>:<lines>` —
+before <x>, after <y>, gain <+X% / ×N>.
+```
+
 ### Blocking
 `<correctness bugs, UB, portability breakage, contract violations,
 data races — file:line + quoted code + suggested fix, or "none">`

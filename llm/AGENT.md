@@ -262,6 +262,51 @@ Reporting: cite the specific `RULES.md` checkbox per finding; severity
 ordering (never bury a bug under nits); don't invent violations —
 label extras as best-practice suggestions.
 
+### `report.md` per-issue template
+
+`report.md` is a plain list of issues — **no sorting required**: each
+new issue is appended as soon as it is confirmed, and its delivery
+artifact (`commits`/`patches` modes) is produced at the same time.
+Every issue entry follows this template:
+
+```markdown
+### <NN>. <Issue name>
+
+- **Type**: `Blocking` | `Major` | `Minor` (`nit: <…>`) — per the severity
+  table above
+- **Files & ranges**: `<path>:<start>-<end>` (repeat for every affected
+  file/range)
+
+**Why it is an issue** — what the code does, why it is wrong, and proof
+the user can verify by reading this section alone:
+- <one sentence per fact: what the code does → why it is wrong>
+- Proof — <navigation to it>, one of:
+  - violated rule: `RULES.md` §N "<checkbox text>" (see verdict row
+    `<path>:<line>`)
+  - tool log: `bin/<helgrind|drd|valgrind|perf|…>.log`, lines <x-y> —
+    <what it shows>
+  - measurement files: `bin/<probe/measurement log>:<lines>` — <result>
+  - Immersion text mismatch: "<quoted sentence from the provided text>"
+    vs implementation at `<path>:<line>` — <the difference>
+
+**Suggested fix** (per output mode — exactly one of):
+- `report`: <fenced code block with the replacement>
+- `commits`: commit `<hash>` — delivered
+- `patches`: patch file `bin/patches/<NN>-<name>.patch` — delivered
+
+**Perf impact** (performance issues only): `bin/<measurement file>:<lines>`
+— before: <baseline time/mem>, after: <fixed time/mem>, gain: <+X% / ×N>.
+```
+
+Rules:
+- Never write "must"/"should" without saying *why* — every requirement
+  carries its reason (the violated rule, the observed log line, the
+  text mismatch).
+- Proof must be navigable: exact file, line range, or quoted sentence.
+  "See the helgrind log" alone is not proof.
+- New issues are appended immediately when found, in discovery order;
+  do not re-sort the report later.
+
 ## Second pass (before reporting done)
 
 A fresh pass (or a second reviewer/model) checking three things:
