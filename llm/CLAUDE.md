@@ -170,22 +170,13 @@ checkboxes prefixed `§N — <box text>` so the report can cite it:
 Design → `llm/RULES.md` §1–§19; Performance →
 `llm/PERFORMANCE.md` §1–§13; build/tests → `llm/DEVELOPMENT.md` §6.
 A phase whose checklist is not transcribed is not started.
-**Pre-transcribed template shortcuts** (the transcription is
-pre-done; copy the needed templates into `bin/` and walk each `bin/`
-copy as the phase's todo — real-time statuses per S3, in order per
-S4, delete the `bin/` copy once all its boxes are `completed` per S1;
-the `llm/` templates are never modified — only `bin/` copies are
-live todos):
-- **Design:** `cp llm/todo_rules_<num>.md bin/todo_rules_<num>.md`
-  (§1–§19 or only applicable sections); walk in §1→§19 order.
-- **Performance:** `cp llm/todo_perf_<num>.md bin/todo_perf_<num>.md`
-  (§1–§13; §3 and §11 are prose-only → single read-and-confirm
-  checkbox); walk in §1→§13 order. Each Performance template
-  includes a **"Workflow" section** driving a commit-per-section
-  cycle: baseline (quick, not a long benchmark) → implement (walk
-  the checklist) → measure → **commit only if faster** (undo if not
-  — revert so the working tree returns to baseline) → delete
-  `bin/todo_perf_<num>.md`.
+**Generated checklist rule:** do not keep generated todo copies under
+`llm/`. `llm/RULES.md` and `llm/PERFORMANCE.md` are the only
+authoritative checklists. `make review` generates live `bin/` phase
+files from the selected source: Design phases transcribe RULES §1–§19;
+Performance phases transcribe PERFORMANCE §1–§13. Walk the generated
+checklist in order, update statuses per S3, and delete the `bin/` phase
+file only after every box is verified.
 
 **S3 — Real-time statuses, never batch.** `in_progress` before
 starting, `completed` immediately after. Never batch at the end; the

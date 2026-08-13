@@ -28,18 +28,25 @@ README "Dependencies" for `CXXFLAGS`/`LDFLAGS`.
 
 ## Review defaults (standing answers — overridable per review)
 
-- Modes: **picked per review** — always ask in the interview
-- Target: **PR / commit / branch** (never the working tree) — which exactly
+- Modes: **collected by `make review`** (it prompts when run interactively,
+  accepts any comma-separated subset). Do not re-ask in the interview — read
+  the `Review modes:` line of `bin/session_brief.md`.
+- Target: **current branch's configured upstream versus `HEAD` by default**;
+  explicit `BASE=`/`HEAD=` revisions are allowed (never the working tree).
+  Collected by `make review`; do not re-ask — read `bin/session_brief.md`.
 - Algorithm text: provided (chat or `docs/papers/…`); Immersion passes
-  only when truly none is given
-- Delivery: **picked per review** — (a) fix-and-commit in a git worktree
-  under `bin/` on a branch, or (b) report-only — no code changes, write
-  `bin/report_<YYYY-MM-DD_HHMM>.txt` with findings + suggested fixes +
-  rationale
-- Verification: **picked per review** — multi-select of build / pattern
-  (unit) tests (`ctest -R "<algo>"`) / Python tests / snapshots; default
-  build only. Profiling tools (`perf`, `valgrind`/callgrind, helgrind/drd)
-  run on the binaries regardless; no local sanitizer builds (CI covers them)
+  only when truly none is given. **This one is asked in the interview** (the
+  LLM needs the source to read/verify it).
+- Output contract: **collected by `make review`** (`commits` / `patches` /
+  `report`). Do not re-ask — read `bin/session_brief.md`. `commits` creates
+  one focused commit per accepted finding plus `report.md`; `patches` creates
+  one stable numbered patch per accepted finding plus `report.md`; `report`
+  makes no code changes and puts each suggested fix in a fenced code block in
+  `report.md`.
+- Verification: **collected by `make review`** as a multi-select
+  (`build` / `tests` / `python` / `snapshots` / `determinism` / `profiling`,
+  default `build`). Do not re-ask — read the `Verification:` line of
+  `bin/session_brief.md`.
 - Measurement dataset (Performance only): **picked per review** — propose
   several datasets (vary size/cardinality/columns), user multi-selects; a
   temporary `src/tests/unit/test_<algo>_perf_probe.cpp` is created to drive
@@ -53,12 +60,17 @@ README "Dependencies" for `CXXFLAGS`/`LDFLAGS`.
 - Performance: no specific numeric targets — review hot loops,
   allocations, containers, layout per `llm/PERFORMANCE.md`
 - Known issues: none — report everything
-- Output: **separate report per mode**; language **English**
+- Output: **separate report per review mode** when requested; language
+  **English**
 - Design scope: **whole footprint**, not just the diff
-- Report file: `bin/report_<YYYY-MM-DD_HHMM>.txt` (date+time, `.txt`) —
-  the deliverable for report-only mode; for fix-and-commit mode a short
-  report is still written noting what was fixed and what was left. Reviews
-  get `bin/todo_*.md` like any task
+- Report file: default `bin/report.md` — the deliverable for all three output
+  contracts. `report` includes fenced suggested fixes; `commits` and `patches`
+  map every accepted finding to its delivery artifact. Reviews get
+  `bin/todo_*.md` like any task.
+- Preparation: run `make review` before the review. It writes the compact
+  `bin/session_brief.md` and creates one phase todo per 1–3 hour slice. Use
+  `MODE=commits|patches|report`, `HOURS=<estimate>`, `PHASES=<override>`,
+  `BASE=<revision>`, and `HEAD=<revision>` as needed.
 - Perf depth: **profile to confirm** suspected hot spots before
   reporting
 - Immersion focus: **text vs implementation** (requirements coverage +
@@ -91,38 +103,45 @@ report with a suggested fix, never silently accepted — never asked
 mid-review. An uncertain claim reported as fact breaks the review's
 reproducibility.
 
-The interview has **five parts** (all up front):
+The interview has **six parts** (all up front). Parts **1, 2, 3, 4, and 6 are
+collected by `make review`** — do **not** ask them in the interview; run
+`make review` (which prompts when interactive) or read an existing
+`bin/session_brief.md`, and use its recorded values. Ask only the parts below
+that `make review` does not cover:
 
-1. **Mode(s)** (multiple choice): Immersion / Design / Performance —
-   one, several, or all three step-by-step. **If Immersion is selected**,
-   ask how the algorithm text will be provided: pasted in chat /
-   `docs/papers/…` path / none. No text → Immersion passes (state it).
-2. **Target** (single choice): branch / commit / PR — which exactly
-   (never the working tree).
-3. **Delivery** (single choice): (a) fix-and-commit — make the
-   suggested fixes in a git worktree under `bin/` on a branch and commit
-   there; or (b) report-only — **no code changes**, write
-   `bin/report_<YYYY-MM-DD_HHMM>.txt` with findings, suggested fixes,
-   and rationale.
-4. **Verification** (multiple choice): build / pattern (unit) tests
-   (`ctest -R "<algo>"`) / Python tests / snapshots — any combination;
-   default build only.
-5. **Measurement dataset** (Performance mode only — multiple choice):
-   propose several datasets (vary size/cardinality/columns), user
+1. **Mode(s)** — collected by `make review` (comma-separated subset of
+   Immersion / Design / Performance). **If Immersion is selected**, ask how
+   the algorithm text will be provided: pasted in chat / `docs/papers/…`
+   path / none. No text → Immersion passes (state it).
+2. **Target** — collected by `make review` (upstream vs `HEAD`, or explicit
+   `BASE=`/`HEAD=`).
+3. **Output contract** — collected by `make review` (`commits` / `patches` /
+   `report`).
+4. **Verification** — collected by `make review` (comma-separated subset of
+   build / tests / python / snapshots / determinism / profiling).
+5. **Measurement dataset** (Performance mode only — multiple choice, asked
+   here): propose several datasets (vary size/cardinality/columns), user
    multi-selects; create a temporary
    `src/tests/unit/test_<algo>_perf_probe.cpp` to drive the measurement,
    and **delete it after all todos are done**.
+6. **Effort and phases** — collected by `make review` (`HOURS=`/`PHASES=`).
+   Keep every phase within 1–3 hours.
 
 ## Review workflow
 
 0. **Copy PREWORK template** — `mkdir -p bin && cp llm/todo_0.md
    bin/todo_0.md`. Check section A (always applies) now; sections B/C
    are checked after the interview (they depend on the selected modes).
-1. **Interview** the user — the five parts above (mode(s), target,
-   delivery, verification, measurement dataset). Track the interview in
-   `bin/todo_tmp_1.md` (a temporary todo); **delete `bin/todo_tmp_1.md`
-   when the interview is done**. No further questions during the review
-   itself — mid-review ambiguity → Needs-info.
+ 1. **Interview** the user — only the parts `make review` does not cover:
+    algorithm-text source (if Immersion), measurement dataset (if
+    Performance), scope, known issues, and other notes. **Do not re-ask
+    mode(s), target, output contract, verification, or effort — they are
+    collected by `make review`.** Run `make review` (it prompts for those
+    when interactive and records them in `bin/session_brief.md`), or read an
+    existing brief. Track the interview in `bin/todo_tmp_1.md` (a temporary
+    todo); **delete `bin/todo_tmp_1.md` when the interview is done**. No
+    further questions during the review itself — mid-review ambiguity →
+    Needs-info.
 2. **Check remaining PREWORK sections** based on interview answers:
    Performance mode → section B (profiling tools); benchmark → section
    C (measurement protocol). If any check **fails**, **stop** and ask
@@ -135,19 +154,18 @@ The interview has **five parts** (all up front):
    `llm/graphify-explain "<algo>"` and `llm/graphify-path "<algo>"
    "bindings"` before verdicts — structural questions answered by the
    graph beat greps (`llm/CLAUDE.md` §7). **Todo files per mode (S1–S2,
-   `llm/CLAUDE.md` §10):** create `bin/todo_<num>.md` for each selected
-   mode, plus one for verification and one for the report.
-   **Design/Performance template shortcuts:** pre-transcribed
-   `llm/todo_rules_<num>.md` and `llm/todo_perf_<num>.md` exist — copy
-   the needed ones into `bin/` and walk them per `llm/CLAUDE.md` §10 S2
-   (including the commit-based workflow for Performance). Delete each
-   `bin/` copy once all its boxes are `completed` (S1). **Mid-work
-   questions OK** if the answer affects remaining todos — ask, then
-   update the todos.
-4. **Worktree** (delivery = fix-and-commit, or Performance mode):
+   `llm/CLAUDE.md` §10):** `make review` creates one phase for each
+   selected mode, plus scope, verification, delivery/report, and any
+   additional 1–3 hour review slices. Design phases transcribe
+   `llm/RULES.md` §1–§19; Performance phases transcribe
+   `llm/PERFORMANCE.md` §1–§13. Never copy generated todo files from
+   `llm/`. Delete each `bin/` phase file only after all its boxes are
+   verified (S1). **Mid-work questions OK** if the answer affects remaining
+   todos — ask, then update the todos.
+ 4. **Worktree** (`commits`, `patches`, or Performance mode):
    `git worktree add bin/<name> <branch>`; build there with the
-   `datasets/` symlink recipe (`llm/DEVELOPMENT.md` §1). Report-only
-   reviews need no worktree.
+    `datasets/` symlink recipe (`llm/DEVELOPMENT.md` §1). `report` reviews
+    need no worktree.
 5. **Performance probe** (Performance mode only): create the temporary
    `src/tests/unit/test_<algo>_perf_probe.cpp` for the measurement
    dataset(s) chosen in interview part 5; **delete it after all todos
@@ -178,13 +196,13 @@ The interview has **five parts** (all up front):
    (memory errors), `helgrind` and `drd` (data races, deadlocks) —
    any error is Blocking. Profiling tools (`perf`, callgrind) confirm
    suspected hot spots before reporting.
-10. **Delivery**: fix-and-commit → fix each issue straight in the
-    worktree, **one commit per issue** (single-line subject, only when
-    explicitly asked); at the end **propose squashing** the commits into
-    one; then free the worktree (`git worktree remove --force
-    bin/<name>`). Report-only → write
-    `bin/report_<YYYY-MM-DD_HHMM>.txt` (findings + quoted code +
-    suggested fixes + rationale), zero code changes.
+ 10. **Delivery**: `commits` → fix each issue straight in the worktree,
+     **one commit per issue** (single-line subject); at the end propose
+     squashing and free the worktree (`git worktree remove --force
+     bin/<name>`). `patches` → produce one stable numbered patch per
+     accepted issue and verify the series. `report` → zero code changes;
+     write `report.md` with quoted evidence and each suggested fix in a
+     fenced code block.
 11. Verify, don't assume: run the verification selected in interview
     part 4 (no local sanitizer builds — CI covers them); state how each
     verdict was verified; commands from `llm/DEVELOPMENT.md` §1 — read
@@ -205,22 +223,22 @@ The interview has **five parts** (all up front):
 4. **Minor / nits** — naming, formatting, clarity (prefix `nit:`).
 5. **Out-of-scope observations** — short bullets only.
 
-### Finding evidence (report-only mode)
+### Finding evidence (`report` mode)
 Every Fail verdict must include: **(a)** the `RULES.md` checkbox
 citation, **(b)** the quoted code at `file:line`, **(c)** one
 sentence on *why* it violates the rule, **(d)** a concrete suggested
 fix. No quote → **Needs-info**, not Fail. Pass/N/A verdicts cite
 `file:line` and how verified (build / profiling / inspection only).
 
-### Delivery-mode distinction
-- **Report-only**: the report IS the deliverable — every finding has
-  citation + quoted code + suggested fix + rationale; zero code
-  changes.
-- **Fix-and-commit**: no quoted-code report — fix each issue straight,
-  **one commit per issue** (single-line subject); at the end **propose
-  squashing** the commits into one. A short summary noting what was
-  fixed and what was left is still written to
-  `bin/report_<YYYY-MM-DD_HHMM>.txt`.
+### Output-contract distinction
+- **`report`**: the report is the deliverable — every finding has citation,
+  quoted code, rationale, and a concrete suggested fix in a fenced code
+  block; zero code changes.
+- **`commits`**: fix each issue straight in the worktree, one focused commit
+  per issue, and map every commit to a report entry. Propose squashing at the
+  end and free the worktree.
+- **`patches`**: fix each issue and emit one stable numbered patch per issue;
+  map every patch to a report entry and verify the complete patch series.
 
 ### Uncertainty rule (bright line)
 If you cannot point to the exact line that violates the rule, it is

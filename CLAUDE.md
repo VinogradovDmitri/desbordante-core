@@ -4,6 +4,7 @@ The full project guidance lives in `llm/` — read these when working in this re
 
 - `llm/CLAUDE.md` — general assistant guidance
 - `llm/AGENT.md` — how to review algorithm contributions
+- `llm/review.md` — common `make review` preparation workflow and output modes
 - `llm/RULES.md` — the checkable development requirements
 - `llm/DEVELOPMENT.md` — build, test, snapshot, and format commands
 - `llm/PLAN.md` — phase/todo workflow for huge tasks, perf branches, measurement protocol
@@ -12,6 +13,11 @@ The full project guidance lives in `llm/` — read these when working in this re
 - `llm/PREWORK.sh` — sudo/install commands the **user** runs (env setup, profiling tools, benchmark protocol) — the LLM cannot run `sudo` or install software; `llm/todo_0.md` checks these have been run
 - `llm/todo_0.md` — environment-check template (phase 0, copied to `bin/todo_0.md` before any `todo_1.md`)
 - `llm/templates/` — fill-in task templates (review, implement, optimize performance)
+
+For reviews, start with `make review`. It resolves the current branch's
+upstream diff, writes `bin/session_brief.md`, and creates one live phase todo
+per 1–3 hour slice. Use `MODE=commits`, `MODE=patches`, or `MODE=report` and
+`HOURS=<estimate>` as needed.
 
 ## Superior Rules — always in context (S1–S6)
 

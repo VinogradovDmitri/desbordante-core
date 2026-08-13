@@ -33,13 +33,16 @@ No "too small" exemption: every task is tracked in a todo file.
   (`llm/CLAUDE.md` §0 item 0, §10 S6).
 - **Every phase todo transcribes its governing checklist** (S2,
   `llm/CLAUDE.md` §10): item text "§N — <box text>"; statuses per
-  S3–S5. **Design/Performance shortcuts:** pre-transcribed templates
-  exist (`llm/todo_rules_<num>.md`, `llm/todo_perf_<num>.md`) — copy
-  into `bin/` and walk per `llm/CLAUDE.md` §10 S2 (Performance
-  templates include the commit-based workflow: baseline → implement
-  → measure → commit if faster / undo → delete). The `llm/`
-  templates are reused across reviews, never modified — only `bin/`
-  copies are live todos.
+  S3–S5. **Design/Performance generation:** `make review` reads the
+  authoritative `llm/RULES.md` or `llm/PERFORMANCE.md` and writes the
+  applicable checklist into live `bin/` phase files. Generated todo
+  copies are not stored under `llm/` and are never treated as reusable
+  templates.
+- **Time-box rule:** ask for the estimated task hours before review. Generate
+  at least `ceil(hours / 2)` phases, with one coherent role per phase and a
+  target of 1–3 hours. Also create the minimum scope, selected-mode,
+  verification, delivery, and report phases. `PHASES=<n>` may raise the count
+  explicitly; never silently collapse a larger estimate into three files.
 - Execute phases one by one: finish the todo → run the verification
   pass (`llm/DEVELOPMENT.md` §6) → **conditional loop** on failure
   (fix, re-run from the first failed check) → only then start the

@@ -1,4 +1,4 @@
-# llm/ — graphify tools for LLM sessions
+# llm/ — graphify and review tools for LLM sessions
 
 Thin wrappers around the [graphify](https://github.com/safishamsi/graphify)
 CLI for this repo's merged knowledge graph (`graphify-out/graph.json`).
@@ -18,6 +18,15 @@ Every script runs from the repo root.
 | `gen-semantic.py` | CMake semantic layer: targets + `target_link_libraries` from `src/**/CMakeLists.txt` → `graphify-out/src-semantic.json` (deterministic `conceptually_related_to` edges, `_origin: agent-semantic`). Runs inside `graphify-update`; idempotent |
 | `gen-llm-graph.py` | Regenerates `graphify-out/llm-graph.json` — `document`/`concept`/`rationale` nodes for all `llm/*.md` docs + `references` edges. Agent extraction; no API key |
 | `graphify-refresh` | Full refresh: semantic re-extraction of `docs/papers/` via Gemini (needs `GEMINI_API_KEY`/`GOOGLE_API_KEY`; unchanged files cache-skipped), then `graphify-update`. Without a key falls back to code-only with a warning |
+| `review_prepare.py` | Targeted by `make review`; resolves the upstream diff, writes `bin/session_brief.md`, and generates granular phase todos |
+
+## Review Preparation
+
+Read `llm/review.md` for the review preparation contract. The common command is
+`make review`. It supports `commits`, `patches`, and `report` output contracts,
+derives the phase count from `HOURS`, and generates Design/Performance
+checklists from `RULES.md`/`PERFORMANCE.md` into `bin/` rather than keeping
+generated todo templates in this directory.
 
 ## Graph layout
 

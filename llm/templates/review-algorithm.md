@@ -8,27 +8,36 @@
 
 ## 0. Interview (before the review — ask the user *all* of this)
 
-> Five parts, all up front. Standing defaults are in `llm/AGENT.md`
+> Six parts, all up front. Standing defaults are in `llm/AGENT.md`
 > "Review defaults" — confirm what deviates. Record the answers below;
 > delete parts that don't apply. **No questions during the review.**
+>
+> Parts **1–4 and 6** (mode(s), target, output contract, verification,
+> effort) are **collected by `make review`** and recorded in
+> `bin/session_brief.md`. **Do not ask them here** — run `make review`
+> (it prompts when interactive) or read an existing brief, and use those
+> values. Ask only what `make review` does **not** cover: algorithm-text
+> source (if Immersion), measurement dataset (if Performance), scope,
+> known issues, other notes.
 
-- [ ] **1. Mode(s)** (multiple choice): Immersion / Design / Performance —
-      one, several, or all three step-by-step? → `<answer>`
+- [ ] **1. Mode(s)** (collected by `make review` — do not re-ask): Immersion
+      / Design / Performance — recorded in the brief's `Review modes:` line.
   - [ ] *(If Immersion)* algorithm text provided where: pasted in chat /
         `docs/papers/…` path / none? **None → Immersion passes** (state it
-        in the report)
-- [ ] **2. Target** (single choice): branch / commit / PR — which exactly?
-      → `<answer>`
-- [ ] **3. Delivery** (single choice): (a) fix-and-commit in a git worktree
-      under `bin/` on a branch, or (b) report-only — no code changes, write
-      `bin/report_<YYYY-MM-DD_HHMM>.txt`? → `<answer>`
-- [ ] **4. Verification** (multiple choice): build / pattern (unit) tests
-      (`ctest -R`) / Python tests / snapshots — which to run? (default:
-      build only) → `<answer>`
-- [ ] **5. Measurement dataset** (Performance only — multiple choice):
+        in the report) — **this sub-question is asked here**.
+- [ ] **2. Target** (collected by `make review` — do not re-ask): recorded
+      in the brief's `Target:` line.
+- [ ] **3. Output contract** (collected by `make review` — do not re-ask):
+      `commits` / `patches` / `report`, recorded in the brief.
+- [ ] **4. Verification** (collected by `make review` — do not re-ask): build
+      / `tests` / `python` / `snapshots` / `determinism` / `profiling`
+      (any subset), recorded in the brief's `Verification:` line.
+- [ ] **5. Measurement dataset** (Performance only — **asked here**):
       proposed datasets `<list>`; user picks `<selection>`; a temporary
       `src/tests/unit/test_<algo>_perf_probe.cpp` is created and **deleted
       after all todos are done** → `<answer>`
+- [ ] **6. Effort and phases** (collected by `make review` — do not re-ask):
+      `HOURS=`/`PHASES=`; recorded in the brief's `Effort budget:` line.
 - [ ] Scope: user-specified or inferred from the diff? → `<answer>`
 - [ ] Known issues the user is already aware of (not to re-report)?
       → `<answer>`
@@ -104,10 +113,11 @@ profiling / inspection only).
 ## 5. Findings
 
 Produce in this order (severity rules + evidence: `llm/AGENT.md`
-"Output format"). **Report-only mode:** every Fail must include
-citation + quoted code + why + suggested fix. **Fix-and-commit mode:**
-fix each issue, one commit per issue, propose squash at end — no
-quoted-code report.
+"Output format"). **`report` mode:** every Fail must include citation +
+quoted code + why + suggested fix in a fenced code block. **`commits` mode:**
+fix each issue, one commit per issue, and propose squash at end. **`patches`
+mode:** emit one stable numbered patch per issue and verify the complete
+series.
 
 ### Blocking
 `<correctness bugs, UB, portability breakage, contract violations,
