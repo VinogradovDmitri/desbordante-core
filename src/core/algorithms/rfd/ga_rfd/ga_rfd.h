@@ -34,7 +34,6 @@ class GaRfdTester;
 
 namespace algos::rfd {
 
-class GaRfd final : public algos::Algorithm {
 // Allocator that backs large, randomly-accessed buffers with huge pages when the
 // kernel grants them, and otherwise falls back to a normal anonymous mapping
 // advised with MADV_HUGEPAGE. All allocations go through mmap/munmap so the
@@ -166,6 +165,11 @@ private:
     using Population = std::vector<Individual>;
 
     // helper methods
+    // Picks a comparison mode per attribute from metrics_/min_similarity_ and
+    // precomputes the structures BuildSimilarityBitsets needs. Runs at Execute
+    // time (not LoadDataInternal) because metrics_/min_similarity_ are execute
+    // options applied after the initial data load.
+    void PrepareAttributeComparisonModes();
     void BuildSimilarityBitsets();
     // Fills attr_similarity_bits_[a] by comparing every pair of rows on attribute a.
     void BuildAttributeBitset(size_t a);

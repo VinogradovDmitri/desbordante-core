@@ -150,12 +150,13 @@ void GaRfd::LoadDataInternal() {
 
     LOG_INFO("Loaded {} rows, {} attributes, {} total pairs", num_rows_, num_attrs_, total_pairs_);
 
+}
+
+void GaRfd::PrepareAttributeComparisonModes() {
     if (min_similarity_.empty()) {
         min_similarity_.assign(num_attrs_, 1.0);
     } else if (min_similarity_.size() == 1) {
         min_similarity_.assign(num_attrs_, min_similarity_[0]);
-    } else if (min_similarity_.size() != num_attrs_) {
-        throw std::invalid_argument("min_similarity size must match the number of attributes");
     }
 
     if (metrics_.empty()) {
@@ -163,8 +164,6 @@ void GaRfd::LoadDataInternal() {
         metrics_.reserve(num_attrs_);
         for (size_t i = 0; i < num_attrs_; i++) metrics_.emplace_back(EqualityMetric());
     }
-    if (metrics_.size() != num_attrs_)
-        throw std::invalid_argument("The number of attributes and metrics do not match");
 
     // Pick a comparison mode per attribute and precompute whatever that mode needs,
     // so the pair-comparison loop avoids strings / parsing / virtual dispatch:
@@ -337,6 +336,9 @@ void GaRfd::BuildAttributeBitsetRange(size_t a, size_t i0, size_t i1) {
 }
 
 void GaRfd::BuildSimilarityBitsets() {
+    // cmp_mode_/column_ids_/... depend on metrics_/min_similarity_, which are
+    // execute options applied after LoadDataInternal, so prepare them here.
+    PrepareAttributeComparisonModes();
     LOG_INFO(
             "BuildSimilarityBitsets: total_pairs_ = {}, num_attrs_ = {}, num_rows_ = {}, threads = "
             "{}",
@@ -575,7 +577,7 @@ void GaRfd::BuildSupportIndexDirect() {
     for (uint32_t pc = 1; pc <= num_attrs_; ++pc) {
         std::vector<uint32_t> level;
         for (uint32_t mask = 1; mask < table_size; ++mask) {
-            if (std::popcount(mask) == pc) level.push_back(mask);
+            if (static_cast<uint32_t>(std::popcount(mask)) == pc) level.push_back(mask);
         }
         if (level.empty()) continue;
         if (pool) {
@@ -991,6 +993,15 @@ std::unordered_set<RFD, RFDHash> GaRfd::Finalize(Population const& pop) const {
 }
 
 void GaRfd::ExecuteInternal() {
+    // metrics / min_similarity are execute options applied after LoadDataInternal
+    // (which runs during construction), so the count consistency can only be
+    // checked here, where the actual user-supplied values are visible.
+    if (!metrics_.empty() && metrics_.size() != num_attrs_)
+        throw std::invalid_argument("The number of attributes and metrics do not match");
+    if (!min_similarity_.empty() && min_similarity_.size() > 1 &&
+        min_similarity_.size() != num_attrs_)
+        throw std::invalid_argument("min_similarity size must match the number of attributes");
+
     LOG_INFO("Build similarity bitsets...");
     BuildSimilarityBitsets();
     Rng rng(rng_engine_, seed_);
@@ -1013,6 +1024,7 @@ void GaRfd::ExecuteInternal() {
         pop.insert(pop.end(), offspring.begin(), offspring.end());
         pop.insert(pop.end(), mutated.begin(), mutated.end());
         Deduplicate(pop);
+        EvaluatePopulation(pop);
         if (pop.size() > population_size_ + 100) {
             std::sort(pop.begin(), pop.end(),
                       [](auto const& a, auto const& b) { return a.confidence > b.confidence; });
