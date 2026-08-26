@@ -264,4 +264,64 @@ TEST(GARfdOperators, ZeroCrossoverAndMutation) {
     EXPECT_GE(rfds.size(), 0);
 }
 
+TEST(GARfdRng, AllEnginesReproducibleWithSameSeed) {
+    for (auto engine :
+         {rfd::RngEngine::kMt19937, rfd::RngEngine::kPcg32, rfd::RngEngine::kXoshiro256}) {
+        auto metrics = EqualityMetrics(5);
+        auto params1 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+        auto params2 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+        params1[config_names::kRngEngine] = engine;
+        params2[config_names::kRngEngine] = engine;
+
+        auto algo1 = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params1);
+        auto algo2 = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params2);
+        algo1->Execute();
+        algo2->Execute();
+
+        auto r1 = algo1->GetRfds();
+        auto r2 = algo2->GetRfds();
+        std::set<rfd::RFD> set1(r1.begin(), r1.end());
+        std::set<rfd::RFD> set2(r2.begin(), r2.end());
+        EXPECT_EQ(set1, set2) << "Engine " << static_cast<int>(engine)
+                              << " must be reproducible with a fixed seed";
+    }
+}
+
+TEST(GARfdRng, DifferentEnginesFindValidRfds) {
+    for (auto engine :
+         {rfd::RngEngine::kMt19937, rfd::RngEngine::kPcg32, rfd::RngEngine::kXoshiro256}) {
+        auto metrics = EqualityMetrics(5);
+        auto params = MakeParams(kIris, 0.0, 0.5, 30, 3, metrics);
+        params[config_names::kRngEngine] = engine;
+        auto algo = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params);
+        algo->Execute();
+        auto const& rfds = algo->GetRfds();
+        for (auto const& rfd : rfds) {
+            EXPECT_NE(rfd.lhs_mask, 0u) << "LHS must not be empty";
+            EXPECT_FALSE(rfd.lhs_mask & (1u << rfd.rhs_index)) << "RHS must not be in LHS";
+            EXPECT_GE(rfd.confidence, 0.5) << "Confidence should be ≥ beta";
+            EXPECT_LE(rfd.confidence, 1.0);
+        }
+    }
+}
+
+TEST(GARfdThreads, ThreadsOptionRunsAndReproduces) {
+    auto metrics = EqualityMetrics(5);
+    auto params1 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+    auto params4 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+    params1[config_names::kThreads] = static_cast<config::ThreadNumType>(1);
+    params4[config_names::kThreads] = static_cast<config::ThreadNumType>(4);
+
+    auto algo1 = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params1);
+    auto algo4 = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params4);
+    algo1->Execute();
+    algo4->Execute();
+
+    auto r1 = algo1->GetRfds();
+    auto r4 = algo4->GetRfds();
+    std::set<rfd::RFD> set1(r1.begin(), r1.end());
+    std::set<rfd::RFD> set4(r4.begin(), r4.end());
+    EXPECT_EQ(set1, set4) << "Multi-threaded run must match single-threaded for a fixed seed";
+}
+
 }  // namespace tests

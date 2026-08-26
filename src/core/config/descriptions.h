@@ -251,4 +251,5 @@ constexpr auto kDRfdCrossoverProbability = "probability of applying crossover be
 constexpr auto kDRfdMutationProbability = "probability of mutating an individual";
 constexpr auto kDRfdMaxGenerations = "maximum number of genetic algorithm generations";
 constexpr auto kDCacheMaxSize = "maximum size of the support cache";
+constexpr auto kDRngEngine = "random number generator engine used by the genetic algorithm";
 }  // namespace config::descriptions

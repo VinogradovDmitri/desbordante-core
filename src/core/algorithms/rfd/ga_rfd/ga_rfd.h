@@ -6,6 +6,7 @@
 #include <iterator>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string>
@@ -15,10 +16,13 @@
 #include <vector>
 
 #include "core/algorithms/algorithm.h"
-#include "core/algorithms/rfd/ga_rfd/util/lru_cache.h"
+#include "core/algorithms/rfd/ga_rfd/rng_engine.h"
+#include "core/algorithms/rfd/ga_rfd/rng_wrapper.h"
 #include "core/algorithms/rfd/rfd.h"
 #include "core/algorithms/rfd/similarity_metric.h"
+#include "core/algorithms/rfd/ga_rfd/util/huge_page_allocator.h"
 #include "core/config/tabular_data/input_table_type.h"
+#include "core/config/thread_number/type.h"
 
 namespace tests {
 class GaRfdTester;
@@ -45,33 +49,43 @@ private:
         }
     };
 
+private:
     // Input
     config::InputTable input_table_;
     std::vector<std::shared_ptr<SimilarityMetric>> metrics_;
 
     // Internal state
     std::vector<std::vector<std::string>> column_data_;
+    enum class CmpMode { kIds, kNumeric, kGeneric };
+    std::vector<CmpMode> cmp_mode_;
+    std::vector<std::vector<uint32_t>> column_ids_;
+    std::vector<std::vector<double>> column_vals_;
+    std::vector<std::vector<size_t>> column_lens_;
+    std::vector<std::vector<std::vector<size_t>>> equality_groups_;
     uint8_t num_attrs_ = 0;
     std::size_t num_rows_ = 0;
     std::size_t total_pairs_ = 0;
 
-    mutable std::vector<uint64_t> compute_buffer_;
-    uint32_t full_mask_ = 0;
+    uint32_t full_mask_;
 
-    // separate bin column on chunk of 64 bit
-    std::vector<std::vector<uint64_t>> attr_similarity_bits_;
+    std::vector<std::vector<uint64_t, HugePageAllocator<uint64_t>>> attr_similarity_bits_;
+    std::vector<std::size_t, HugePageAllocator<std::size_t>> support_index_;
+    bool lazy_support_ = false;
+    mutable std::mutex support_cache_mutex_;
+    mutable std::unordered_map<uint32_t, std::size_t> support_cache_;
 
     std::size_t cache_max_size_ = 10000;
-    mutable std::unique_ptr<util::LRUCache<uint32_t, std::size_t>> support_cache_;
 
     // Parameters
-    std::vector<double> min_similarity_;  // similarity thresholds per attribute
-    double eps_ = 1.0;                    // minimum confidence for RFD
+    std::vector<double> min_similarity_;
+    double eps_ = 1.0;
     std::size_t max_generations_ = 32;
     std::size_t population_size_ = 1024;
     double crossover_probability_ = 1.0;
     double mutation_probability_ = 1.0;
-    std::uint32_t seed_ = 123;  // random number generator seed
+    std::uint32_t seed_ = 123;
+    RngEngine rng_engine_ = RngEngine::kMt19937;
+    config::ThreadNumType threads_ = 0;
 
     std::unordered_set<RFD, RFDHash> discovered_;
 
@@ -82,35 +96,32 @@ private:
     void ExecuteInternal() final;
     void ResetState() final;
 
+    using Population = std::vector<Individual>;
+
     // helper methods
-    // Expands per-attribute parameters (min_similarity, metrics) to match
-    // num_attrs_, filling defaults where unset; called at load and before
-    // every execution.
-    void NormalizeSimilarityConfig();
+    void PrepareAttributeComparisonModes();
     void BuildSimilarityBitsets();
+    void BuildAttributeBitset(size_t a);
+    void BuildAttributeBitsetRange(size_t a, size_t i0, size_t i1);
+    void BuildEqualityBitsetRange(size_t a, size_t i0, size_t i1);
+    void BuildSupportIndex();
+    void BuildSupportIndexDirect();
+    [[nodiscard]] std::size_t ComputeSupportDirect(uint32_t attrs_mask) const;
+    [[nodiscard]] std::size_t ComputeSupportLazy(uint32_t attrs_mask) const;
     [[nodiscard]] std::size_t ComputeSupport(uint32_t attrs_mask) const;
-    // Computes conf and supp for a single individual
     [[nodiscard]] Individual Evaluate(Individual const& ind) const;
-    // Computes conf and supp for all individuals
-    void EvaluatePopulation(std::unordered_set<Individual, IndividualHash>& pop) const;
-    // Checks each individual threshold satisfies conf
-    [[nodiscard]] bool AllOf(std::unordered_set<Individual, IndividualHash> const& pop) const;
-    // Computes fitness from conf: 1.0 if confidence >= beta, else confidence / beta.
+    void EvaluatePopulation(Population& pop) const;
+    [[nodiscard]] bool AllOf(Population const& pop) const;
     [[nodiscard]] double Fitness(double confidence) const noexcept;
+    void Deduplicate(Population& pop) const;
 
     // GA methods
-    [[nodiscard]] std::unordered_set<Individual, IndividualHash> InitializePopulation(
-            std::mt19937& rng) const;
-    [[nodiscard]] std::unordered_set<Individual, IndividualHash> Select(
-            std::unordered_set<Individual, IndividualHash> const& pop, std::mt19937& rng) const;
-    [[nodiscard]] std::unordered_set<Individual, IndividualHash> Crossover(
-            std::unordered_set<Individual, IndividualHash> const& selected,
-            std::mt19937& rng) const;
-    [[nodiscard]] std::unordered_set<Individual, IndividualHash> Mutate(
-            std::unordered_set<Individual, IndividualHash> const& pop, std::mt19937& rng) const;
+    [[nodiscard]] Population InitializePopulation(Rng& rng) const;
+    [[nodiscard]] Population Select(Population const& pop, Rng& rng) const;
+    [[nodiscard]] Population Crossover(Population const& selected, Rng& rng) const;
+    [[nodiscard]] Population Mutate(Population const& pop, Rng& rng) const;
 
-    [[nodiscard]] std::unordered_set<RFD, RFDHash> Finalize(
-            std::unordered_set<Individual, IndividualHash> const& pop) const;
+    [[nodiscard]] std::unordered_set<RFD, RFDHash> Finalize(Population const& pop) const;
 
     friend class tests::GaRfdTester;
 

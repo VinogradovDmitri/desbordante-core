@@ -33,6 +33,8 @@
 #include "core/config/custom_metric/custom_vector_metric/type.h"
 #include "core/config/custom_random_seed/type.h"
 #include "core/config/enum_members_string.h"
+#include "core/algorithms/rfd/ga_rfd/rng_engine.h"
+#include "core/algorithms/rfd/similarity_metric.h"
 #include "core/config/error_measure/type.h"
 #include "core/config/exceptions.h"
 #include "core/config/tabular_data/input_table_type.h"
@@ -252,6 +254,7 @@ std::unordered_map<std::type_index, ConvFunc> const kConverters{
         kEnumConvPair<algos::cind::CondType>,
         kEnumConvPair<algos::cind::AlgoType>,
         kEnumConvPair<algos::des::DifferentialStrategy>,
+        kEnumConvPair<algos::rfd::RngEngine>,
         kCharEnumConvPair<algos::Binop>,
         {typeid(config::InputTable), InputTableToAny},
         {typeid(std::shared_ptr<model::ISequenceStream>), SequenceStreamToAny},
