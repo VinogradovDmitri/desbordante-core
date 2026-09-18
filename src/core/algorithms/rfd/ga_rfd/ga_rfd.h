@@ -16,6 +16,8 @@
 #include <vector>
 
 #include "core/algorithms/algorithm.h"
+#include "core/algorithms/rfd/ga_rfd/rng_engine.h"
+#include "core/algorithms/rfd/ga_rfd/rng_wrapper.h"
 #include "core/algorithms/rfd/ga_rfd/util/lru_cache.h"
 #include "core/algorithms/rfd/rfd.h"
 #include "core/config/custom_metric/custom_metrics/type.h"
@@ -75,6 +77,7 @@ private:
     double crossover_probability_ = 1.0;
     double mutation_probability_ = 1.0;
     std::uint32_t seed_ = 123;  // random number generator seed
+    RngEngine rng_engine_ = RngEngine::kMt19937;
     config::ThreadNumType threads_ = 0;
 
     std::unordered_set<RFD, RFDHash> discovered_;
@@ -102,17 +105,13 @@ private:
     double Fitness(double confidence) const noexcept;
 
     // GA methods
-    std::unordered_set<Individual, IndividualHash> InitializePopulation(
-            std::mt19937& random_generator) const;
+    std::unordered_set<Individual, IndividualHash> InitializePopulation(Rng& rng) const;
     std::unordered_set<Individual, IndividualHash> Select(
-            std::unordered_set<Individual, IndividualHash> const& population,
-            std::mt19937& random_generator) const;
+            std::unordered_set<Individual, IndividualHash> const& population, Rng& rng) const;
     std::unordered_set<Individual, IndividualHash> Crossover(
-            std::unordered_set<Individual, IndividualHash> const& selected,
-            std::mt19937& random_generator) const;
+            std::unordered_set<Individual, IndividualHash> const& selected, Rng& rng) const;
     std::unordered_set<Individual, IndividualHash> Mutate(
-            std::unordered_set<Individual, IndividualHash> const& population,
-            std::mt19937& random_generator) const;
+            std::unordered_set<Individual, IndividualHash> const& population, Rng& rng) const;
 
     std::unordered_set<RFD, RFDHash> Finalize(
             std::unordered_set<Individual, IndividualHash> const& population) const;

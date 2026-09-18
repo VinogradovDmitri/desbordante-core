@@ -92,6 +92,7 @@ constexpr auto kRfdCrossoverProbability = "crossover_probability";
 constexpr auto kRfdMutationProbability = "mutation_probability";
 constexpr auto kRfdMaxGenerations = "max_generations";
 constexpr auto kCacheMaxSize = "cache_size";
+constexpr auto kRngEngine = "rng_engine";
 // GFD
 constexpr auto kGfdData = "gfd";
 constexpr auto kGraphData = "graph";

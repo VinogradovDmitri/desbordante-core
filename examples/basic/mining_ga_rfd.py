@@ -265,6 +265,8 @@ print("""
                           or a list of values (one per column). Values 
                           must be in [0,1]. (default {1.0, 1.0, ...})
   seed                  - seed for reproducible results (default 123)
+  rng_engine            - random number generator engine: one of 'mt19937',
+                          'pcg32', 'xoshiro256' or 'minstd_rand' (default 'mt19937')
   threads               - number of worker threads for bitset construction
                           (0 or 1 = single-threaded, default 0)
   cache_size            - maximum number of cached comparisons, the bigger 
@@ -353,7 +355,7 @@ algo_rfd = desbordante.rfd.algorithms.GaRfd()
 algo_rfd.load_data(table=(DATA_PATH, ",", True))
 algo_rfd.execute(metrics=[abs_diff, abs_diff, abs_diff],
                  min_similarity=[0.95], minconf=0.7, max_generations=500, seed=42,
-                 threads=0)
+                 threads=0, rng_engine='mt19937')
 rfds = algo_rfd.get_rfds()
 
 highlight_key = make_rfd_key(COL_NAMES, ["height_cm", "weight_kg"], "shoe_size_eu")
@@ -793,6 +795,21 @@ printlns(
     "same results across runs, always set the seed parameter: " + 
     "algo.execute(seed=42). Without a fixed seed, two runs with the " + 
     "same parameters may return slightly different sets of RFDs."
+)
+printlns(
+    "  The rng_engine option chooses the underlying generator: 'mt19937' (the " +
+    "default, large internal state, good statistical quality), 'pcg32' and " +
+    "'xoshiro256' (smaller, faster state and faster per-call throughput, which " +
+    "can shorten the inner GA loops), and 'minstd_rand' (a tiny 32-bit LCG, the " +
+    "cheapest engine, useful when RNG throughput is the limiting factor). All of " +
+    "them are deterministic given a seed; they just explore the search space " +
+    "differently, so results may vary between engines even with the same seed."
+)
+printlns(
+    "  Reproducibility is determined by three things working together: the seed, " +
+    "the random number generator engine (rng_engine), and the input data. The " +
+    "same seed with the same rng_engine always yields identical RFDs, regardless " +
+    "of how many threads you use. This makes experiments comparable and debuggable."
 )
 printlns(
     "  The threads option does not affect reproducibility and "
