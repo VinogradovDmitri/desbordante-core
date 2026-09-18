@@ -25,6 +25,11 @@ public:
 
     virtual double Dist(model::Type const* type, std::byte const* first,
                         std::byte const* second) const = 0;
+
+    // True for exact-equality metrics (enables the integer-id fast path).
+    virtual bool IsEquality() const {
+        return false;
+    }
 };
 
 /// @brief Provides a convenient way to define custom metric, when column type is known in advance

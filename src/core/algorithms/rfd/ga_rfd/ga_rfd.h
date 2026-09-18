@@ -69,6 +69,11 @@ private:
 
     // Precomputed support for every mask (small tables) for O(1) lookups.
     std::vector<std::size_t> support_index_;
+    // Lazy per-mask support for wide exact-equality tables (skips bitsets).
+    bool lazy_support_ = false;
+    // Integer ids for exact-equality columns; nulls get unique ids.
+    std::vector<std::vector<uint32_t>> column_ids_;
+    std::vector<std::vector<std::vector<size_t>>> equality_groups_;
 
     std::size_t cache_max_size_ = 10000;
     mutable std::unique_ptr<util::LRUCache<uint32_t, std::size_t>> support_cache_;
@@ -95,10 +100,15 @@ private:
     void ResetState() final;
 
     // helper methods
+    // Interns exact-equality columns to integer ids for fast paths.
+    void PrepareExactEquality();
     void BuildMatchBitsets();
     void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                std::size_t row_end);
     void BuildSupportIndex();
+    void BuildSupportIndexDirect();
+    [[nodiscard]] std::size_t ComputeSupportDirect(uint32_t attributes_mask) const;
+    [[nodiscard]] std::size_t ComputeSupportLazy(uint32_t attributes_mask) const;
     std::size_t ComputeSupport(uint32_t attributes_mask) const;
     // Computes conf and supp for a single individual
     Individual Evaluate(Individual const& individual) const;

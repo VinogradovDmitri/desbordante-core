@@ -36,6 +36,16 @@ public:
         algo.MakeExecuteOptsAvailable();
         algos::ConfigureFromMap(algo, params);
     }
+
+    // Forces the lazy support path regardless of table shape.
+    static void ForceLazyMode(rfd::GaRfd& algo) {
+        algo.support_index_.clear();
+        algo.lazy_support_ = true;
+    }
+
+    static void Execute(rfd::GaRfd& algo) {
+        algo.ExecuteInternal();
+    }
 };
 
 static algos::StdParamsMap MakeParams(config::InputTable const& table,
@@ -166,6 +176,62 @@ TEST(GARfdSupport, PrecomputeModeOnMatchesAuto) {
     };
 
     EXPECT_EQ(RunMasks(rfd::PrecomputeMode::kAuto), RunMasks(rfd::PrecomputeMode::kOn));
+}
+
+// Lazy path must return exactly the same supports as the precomputed index.
+TEST(GARfdSupport, LazySupportMatchesPrecomputed) {
+    config::InputTable table = std::make_shared<CSVParser>(kIris);
+    config::CustomMetricsType metrics(5, rfd::EqualityMetric());
+    std::vector<double> sim_vec(5, 1.0);
+
+    auto algo = std::make_unique<rfd::GaRfd>();
+    auto params = MakeParams(table, sim_vec, 0.5, 10, 1, metrics);
+    algos::ConfigureFromMap(*algo, params);
+    algo->LoadData();
+    GaRfdTester::Configure(*algo, params);
+    GaRfdTester::BuildMatchBitsets(*algo);
+
+    std::vector<std::size_t> precomputed(1u << 5);
+    for (uint32_t mask = 0; mask < (1u << 5); ++mask) {
+        precomputed[mask] = GaRfdTester::ComputeSupport(*algo, mask);
+    }
+
+    GaRfdTester::ForceLazyMode(*algo);
+    for (uint32_t mask = 0; mask < (1u << 5); ++mask) {
+        EXPECT_EQ(GaRfdTester::ComputeSupport(*algo, mask), precomputed[mask])
+                << "mask=" << mask;
+    }
+
+    // The computed values must be cached and stable across repeated queries.
+    uint32_t const mask = (1u << 4) | 2u;
+    EXPECT_EQ(GaRfdTester::ComputeSupport(*algo, mask), precomputed[mask]);
+    EXPECT_EQ(GaRfdTester::ComputeSupport(*algo, mask), precomputed[mask]);
+}
+
+// Full GA must agree on both support paths.
+TEST(GARfdSupport, LazyModeEndToEnd) {
+    auto RunAndCollect = [](bool force_lazy) {
+        config::InputTable table = std::make_shared<CSVParser>(kTestLong);
+        config::CustomMetricsType metrics(3, rfd::EqualityMetric());
+        std::vector<double> sim_vec(3, 1.0);
+
+        auto algo = std::make_unique<rfd::GaRfd>();
+        auto params = MakeParams(table, sim_vec, 0.9, 32, 30, metrics);
+        algos::ConfigureFromMap(*algo, params);
+        algo->LoadData();
+        GaRfdTester::Configure(*algo, params);
+        GaRfdTester::Execute(*algo);
+        if (force_lazy) {
+            GaRfdTester::ForceLazyMode(*algo);
+            GaRfdTester::Execute(*algo);
+        }
+        std::vector<std::string> rfds;
+        for (auto const& rfd : algo->GetRfds()) rfds.push_back(rfd.ToString());
+        std::sort(rfds.begin(), rfds.end());
+        return rfds;
+    };
+
+    EXPECT_EQ(RunAndCollect(false), RunAndCollect(true));
 }
 
 }  // namespace tests

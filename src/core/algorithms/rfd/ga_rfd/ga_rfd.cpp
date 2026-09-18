@@ -24,6 +24,7 @@
 #include "core/config/tabular_data/input_table/option.h"
 #include "core/config/thread_number/option.h"
 #include "core/model/index.h"
+#include "core/model/types/mixed_type.h"
 #include "core/util/custom_metric/custom_metric.h"
 #include "core/util/logger.h"
 #include "core/util/worker_thread_pool.h"
@@ -180,6 +181,66 @@ void GaRfd::LoadDataInternal() {
              total_pairs_);
 }
 
+void GaRfd::PrepareExactEquality() {
+    column_ids_.clear();
+    equality_groups_.clear();
+    column_ids_.resize(num_attributes_);
+    equality_groups_.resize(num_attributes_);
+
+    auto const& column_data = typed_relation_->GetColumnData();
+    for (std::size_t attribute = 0; attribute < num_attributes_; ++attribute) {
+        if (min_similarity_[attribute] < 1.0 || !metrics_[attribute]->IsEquality()) continue;
+        auto const& column = column_data[attribute];
+        std::unordered_map<std::string, uint32_t> id_map;
+        id_map.reserve(num_rows_);
+        column_ids_[attribute].resize(num_rows_);
+        // Nulls get unique ids so they never match.
+        for (std::size_t row = 0; row < num_rows_; ++row) {
+            if (column.IsNullOrEmpty(row)) {
+                uint32_t const id =
+                        static_cast<uint32_t>(equality_groups_[attribute].size());
+                column_ids_[attribute][row] = id;
+                equality_groups_[attribute].push_back({row});
+                continue;
+            }
+            // Doubles use raw bytes (string form can merge distinct values); NaN never matches.
+            std::string key;
+            if (column.GetValueTypeId(row) == model::TypeId::kDouble) {
+                std::byte const* bytes = column.GetValue(row);
+                if (column.GetTypeId() == model::TypeId::kMixed) {
+                    bytes = model::MixedType::RetrieveValue(bytes);
+                }
+                double value;
+                std::memcpy(&value, bytes, sizeof(double));
+                if (std::isnan(value)) {
+                    uint32_t const id =
+                            static_cast<uint32_t>(equality_groups_[attribute].size());
+                    column_ids_[attribute][row] = id;
+                    equality_groups_[attribute].push_back({row});
+                    continue;
+                }
+                if (value == 0.0) value = 0.0;  // canonicalize -0.0
+                key.assign(reinterpret_cast<char const*>(&value), sizeof(double));
+            } else {
+                key = column.GetDataAsString(row);
+            }
+            auto it = id_map.find(key);
+            if (it == id_map.end()) {
+                uint32_t const fresh =
+                        static_cast<uint32_t>(equality_groups_[attribute].size());
+                it = id_map.emplace(key, fresh).first;
+                equality_groups_[attribute].push_back({});
+            }
+            uint32_t const id = it->second;
+            column_ids_[attribute][row] = id;
+            equality_groups_[attribute][id].push_back(row);
+        }
+    }
+    std::size_t exact = 0;
+    for (auto const& ids : column_ids_) exact += !ids.empty();
+    LOG_INFO("Exact-equality columns: {}/{}", exact, num_attributes_);
+}
+
 void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                   std::size_t row_end) {
     auto const& column_data = typed_relation_->GetColumnData();
@@ -230,6 +291,26 @@ void GaRfd::BuildMatchBitsets() {
     if (!support_cache_) {
         support_cache_ = std::make_unique<util::LRUCache<uint32_t, std::size_t>>(cache_max_size_);
     }
+    support_index_.clear();
+    lazy_support_ = false;
+
+    PrepareExactEquality();
+
+    bool const all_exact = std::ranges::all_of(
+            column_ids_, [](auto const& ids) { return !ids.empty(); });
+    constexpr std::size_t kMaxDirectRows = std::size_t{1} << 22;
+    if (all_exact && num_attributes_ < 24 &&
+        num_rows_ <= (kMaxDirectRows >> num_attributes_)) {
+        BuildSupportIndexDirect();
+        return;
+    }
+    if (all_exact) {
+        lazy_support_ = true;
+        LOG_INFO("Using lazy per-mask support compute ({} rows, {} attributes)", num_rows_,
+                 num_attributes_);
+        return;
+    }
+
     std::size_t const num_words_per_attribute = (total_pairs_ + 63) / 64;
     attribute_match_bits_.assign(num_attributes_,
                                  std::vector<uint64_t>(num_words_per_attribute, 0));
@@ -351,9 +432,166 @@ void GaRfd::BuildSupportIndex() {
     }
 }
 
+void GaRfd::BuildSupportIndexDirect() {
+    std::size_t const table_size = std::size_t{1} << num_attributes_;
+    support_index_.assign(table_size, 0);
+    support_index_[0] = total_pairs_;
+    LOG_INFO("Using direct support precompute ({} rows, {} attributes)", num_rows_,
+             num_attributes_);
+
+    std::size_t const slice = num_rows_ * table_size;
+    std::size_t const bnd_slice = (num_rows_ + 1) * table_size;
+    std::vector<size_t> rows_flat(slice);
+    std::vector<size_t> bounds_flat(bnd_slice);
+    std::vector<size_t> num_groups(table_size, 0);
+    std::iota(rows_flat.begin(), rows_flat.begin() + num_rows_, size_t{0});
+    bounds_flat[0] = 0;
+    bounds_flat[1] = num_rows_;
+    num_groups[0] = 1;
+
+    auto refine_mask = [this, &rows_flat, &bounds_flat, &num_groups](uint32_t mask) {
+        uint32_t const parent = mask & (mask - 1);
+        int const a = FirstSetBitIndex(mask);
+        auto const& col_ids = column_ids_[static_cast<size_t>(a)];
+        std::size_t const rows_off = static_cast<std::size_t>(mask) * num_rows_;
+        std::size_t const rows_p_off = static_cast<std::size_t>(parent) * num_rows_;
+        std::size_t const bnd_off = static_cast<std::size_t>(mask) * (num_rows_ + 1);
+        std::size_t const bnd_p_off = static_cast<std::size_t>(parent) * (num_rows_ + 1);
+
+        thread_local std::vector<uint32_t> count;
+        thread_local std::vector<uint32_t> off;
+        thread_local std::vector<uint32_t> touched;
+        if (count.size() < num_rows_) {
+            count.assign(num_rows_, 0);
+            off.assign(num_rows_, 0);
+        }
+        touched.clear();
+
+        std::size_t child_groups = 0;
+        std::size_t cursor = 0;
+        std::size_t support = 0;
+        bounds_flat[bnd_off] = 0;
+        for (size_t g = 0; g < num_groups[parent]; ++g) {
+            std::size_t const b0 = bounds_flat[bnd_p_off + g];
+            std::size_t const b1 = bounds_flat[bnd_p_off + g + 1];
+            for (std::size_t i = b0; i < b1; ++i) {
+                uint32_t const id = col_ids[rows_flat[rows_p_off + i]];
+                if (count[id] == 0) {
+                    count[id] = 1;
+                    touched.push_back(id);
+                } else {
+                    ++count[id];
+                }
+            }
+            for (uint32_t id : touched) {
+                std::size_t const c = count[id];
+                support += c * (c - 1) / 2;
+                off[id] = static_cast<uint32_t>(cursor);
+                cursor += c;
+                bounds_flat[bnd_off + ++child_groups] = cursor;
+            }
+            for (std::size_t i = b0; i < b1; ++i) {
+                uint32_t const id = col_ids[rows_flat[rows_p_off + i]];
+                rows_flat[rows_off + off[id]++] = rows_flat[rows_p_off + i];
+            }
+            for (uint32_t id : touched) count[id] = 0;
+            touched.clear();
+        }
+        num_groups[mask] = child_groups;
+        support_index_[mask] = support;
+    };
+
+    std::optional<::util::WorkerThreadPool> pool;
+    if (threads_ > 1) pool.emplace(threads_);
+    for (uint32_t pc = 1; pc <= num_attributes_; ++pc) {
+        std::vector<uint32_t> level;
+        for (uint32_t mask = 1; mask < table_size; ++mask) {
+            if (static_cast<uint32_t>(std::popcount(mask)) == pc) level.push_back(mask);
+        }
+        if (level.empty()) continue;
+        if (pool) {
+            pool->ExecIndex(
+                    [&refine_mask, &level](model::Index i) {
+                        refine_mask(level[static_cast<size_t>(i)]);
+                    },
+                    static_cast<model::Index>(level.size()));
+        } else {
+            for (uint32_t mask : level) refine_mask(mask);
+        }
+    }
+}
+
+std::size_t GaRfd::ComputeSupportDirect(uint32_t attributes_mask) const {
+    uint32_t mm = attributes_mask;
+    uint32_t attrs[32];
+    int k = 0;
+    while (mm) {
+        attrs[k++] = static_cast<uint32_t>(FirstSetBitIndex(mm));
+        mm &= mm - 1;
+    }
+
+    thread_local std::vector<size_t> idx;
+    if (idx.size() != num_rows_) idx.resize(num_rows_);
+    std::iota(idx.begin(), idx.end(), size_t{0});
+    std::sort(idx.begin(), idx.end(), [this, &attrs, k](size_t i, size_t j) {
+        for (int t = 0; t < k; ++t) {
+            uint32_t const a = column_ids_[attrs[t]][i];
+            uint32_t const b = column_ids_[attrs[t]][j];
+            if (a != b) return a < b;
+        }
+        return false;
+    });
+
+    std::size_t support = 0;
+    size_t run_start = 0;
+    for (size_t i = 1; i < num_rows_; ++i) {
+        bool same = true;
+        for (int t = 0; t < k; ++t) {
+            if (column_ids_[attrs[t]][idx[i]] != column_ids_[attrs[t]][idx[i - 1]]) {
+                same = false;
+                break;
+            }
+        }
+        if (!same) {
+            std::size_t const c = i - run_start;
+            support += c * (c - 1) / 2;
+            run_start = i;
+        }
+    }
+    std::size_t const c = num_rows_ - run_start;
+    support += c * (c - 1) / 2;
+    return support;
+}
+
+std::size_t GaRfd::ComputeSupportLazy(uint32_t attributes_mask) const {
+    if (attributes_mask == 0) [[unlikely]] {
+        return total_pairs_;
+    }
+
+    if ((attributes_mask & (attributes_mask - 1)) == 0u) [[unlikely]] {
+        std::size_t s = 0;
+        for (auto const& group :
+             equality_groups_[static_cast<size_t>(FirstSetBitIndex(attributes_mask))]) {
+            s += group.size() * (group.size() - 1) / 2;
+        }
+        return s;
+    }
+
+    if (auto cached = support_cache_->Get(attributes_mask)) return *cached;
+
+    std::size_t const support = ComputeSupportDirect(attributes_mask);
+
+    support_cache_->Put(attributes_mask, support);
+    return support;
+}
+
 std::size_t GaRfd::ComputeSupport(uint32_t attributes_mask) const {
     if (!support_index_.empty()) [[likely]] {
         return support_index_[attributes_mask];
+    }
+
+    if (lazy_support_) [[unlikely]] {
+        return ComputeSupportLazy(attributes_mask);
     }
 
     if (auto cached = support_cache_->Get(attributes_mask)) return *cached;
@@ -711,7 +949,10 @@ void GaRfd::ResetState() {
     discovered_.clear();
     support_cache_.reset();
     support_index_.clear();
+    column_ids_.clear();
+    equality_groups_.clear();
     attribute_match_bits_.clear();
+    lazy_support_ = false;
 }
 
 GaRfd::~GaRfd() {

@@ -44,6 +44,10 @@ public:
                 std::byte const* second) const override {
         return ValuesEqual(type, first, second) ? 0.0 : kDissimilarDist;
     }
+
+    bool IsEquality() const override {
+        return true;
+    }
 };
 
 class LevenshteinMetricImpl : public util::ICustomMetric {
