@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -23,6 +25,16 @@ public:
 
     static std::size_t ComputeSupport(rfd::GaRfd const& algo, uint32_t mask) {
         return algo.ComputeSupport(mask);
+    }
+
+    static bool HasSupportIndex(rfd::GaRfd const& algo) {
+        return !algo.support_index_.empty();
+    }
+
+    // Configures execute options post-LoadData, like Execute() does.
+    static void Configure(rfd::GaRfd& algo, algos::StdParamsMap const& params) {
+        algo.MakeExecuteOptsAvailable();
+        algos::ConfigureFromMap(algo, params);
     }
 };
 
@@ -87,6 +99,73 @@ TEST(GARfdSupport, CacheReuse) {
     std::size_t first = GaRfdTester::ComputeSupport(*algo, mask);
     std::size_t second = GaRfdTester::ComputeSupport(*algo, mask);
     EXPECT_EQ(first, second);
+}
+
+// Support must shrink monotonically when attributes are added to a mask.
+TEST(GARfdSupport, PrecomputedIndexConsistency) {
+    config::InputTable table = std::make_shared<CSVParser>(kIris);
+    config::CustomMetricsType metrics(5, rfd::EqualityMetric());
+    std::vector<double> sim_vec(5, 1.0);
+
+    auto algo = std::make_unique<rfd::GaRfd>();
+    auto params = MakeParams(table, sim_vec, 0.5, 10, 1, metrics);
+    algos::ConfigureFromMap(*algo, params);
+    algo->LoadData();
+    GaRfdTester::Configure(*algo, params);
+    GaRfdTester::BuildMatchBitsets(*algo);
+
+    constexpr std::size_t total_pairs = 150 * 149 / 2;
+    uint32_t const full_mask = (1u << 5) - 1;
+
+    EXPECT_EQ(GaRfdTester::ComputeSupport(*algo, 0), total_pairs);
+    std::size_t const full_support = GaRfdTester::ComputeSupport(*algo, full_mask);
+    EXPECT_LE(full_support, total_pairs);
+
+    for (uint32_t mask = 0; mask < (1u << 5); ++mask) {
+        std::size_t const s = GaRfdTester::ComputeSupport(*algo, mask);
+        EXPECT_LE(s, total_pairs) << "mask=" << mask;
+        for (int a = 0; a < 5; ++a) {
+            if (mask & (1u << a)) continue;
+            uint32_t const bigger = mask | (1u << a);
+            EXPECT_GE(s, GaRfdTester::ComputeSupport(*algo, bigger))
+                    << "mask=" << mask << " adding attr " << a;
+        }
+    }
+}
+
+TEST(GARfdSupport, PrecomputeModeOffSkipsIndex) {
+    // Non-exact metrics take the bitset path, where the mode switch applies
+    // (exact tables always use the direct/lazy paths instead).
+    config::InputTable table = std::make_shared<CSVParser>(kIris);
+    config::CustomMetricsType metrics(5, rfd::LevenshteinMetric());
+    std::vector<double> sim_vec(5, 0.8);
+
+    auto params = MakeParams(table, sim_vec, 0.5, 10, 1, metrics);
+    params[config::names::kPrecomputeSupport] = rfd::PrecomputeMode::kOff;
+    auto algo = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params);
+    algo->Execute();
+    EXPECT_FALSE(GaRfdTester::HasSupportIndex(*algo));
+}
+
+TEST(GARfdSupport, PrecomputeModeOnMatchesAuto) {
+    auto RunMasks = [](rfd::PrecomputeMode mode) {
+        config::InputTable table = std::make_shared<CSVParser>(kIris);
+        config::CustomMetricsType metrics(5, rfd::LevenshteinMetric());
+        std::vector<double> sim_vec(5, 0.8);
+
+        auto params = MakeParams(table, sim_vec, 0.5, 10, 1, metrics);
+        params[config::names::kPrecomputeSupport] = mode;
+        auto algo = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params);
+        algo->Execute();
+        EXPECT_TRUE(GaRfdTester::HasSupportIndex(*algo));
+        std::vector<std::size_t> supports(1u << 5);
+        for (uint32_t mask = 0; mask < (1u << 5); ++mask) {
+            supports[mask] = GaRfdTester::ComputeSupport(*algo, mask);
+        }
+        return supports;
+    };
+
+    EXPECT_EQ(RunMasks(rfd::PrecomputeMode::kAuto), RunMasks(rfd::PrecomputeMode::kOn));
 }
 
 }  // namespace tests

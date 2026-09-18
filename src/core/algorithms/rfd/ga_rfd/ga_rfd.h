@@ -18,6 +18,7 @@
 #include "core/algorithms/algorithm.h"
 #include "core/algorithms/rfd/ga_rfd/rng_engine.h"
 #include "core/algorithms/rfd/ga_rfd/rng_wrapper.h"
+#include "core/algorithms/rfd/ga_rfd/precompute_mode.h"
 #include "core/algorithms/rfd/ga_rfd/util/lru_cache.h"
 #include "core/algorithms/rfd/rfd.h"
 #include "core/config/custom_metric/custom_metrics/type.h"
@@ -66,6 +67,9 @@ private:
     // separate bin column on chunk of 64 bit
     std::vector<std::vector<uint64_t>> attribute_match_bits_;
 
+    // Precomputed support for every mask (small tables) for O(1) lookups.
+    std::vector<std::size_t> support_index_;
+
     std::size_t cache_max_size_ = 10000;
     mutable std::unique_ptr<util::LRUCache<uint32_t, std::size_t>> support_cache_;
 
@@ -79,6 +83,7 @@ private:
     std::uint32_t seed_ = 123;  // random number generator seed
     RngEngine rng_engine_ = RngEngine::kMt19937;
     config::ThreadNumType threads_ = 0;
+    PrecomputeMode precompute_mode_ = PrecomputeMode::kAuto;
 
     std::unordered_set<RFD, RFDHash> discovered_;
 
@@ -93,6 +98,7 @@ private:
     void BuildMatchBitsets();
     void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                std::size_t row_end);
+    void BuildSupportIndex();
     std::size_t ComputeSupport(uint32_t attributes_mask) const;
     // Computes conf and supp for a single individual
     Individual Evaluate(Individual const& individual) const;

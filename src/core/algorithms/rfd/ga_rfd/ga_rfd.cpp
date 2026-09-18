@@ -9,13 +9,14 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <ranges>
 #include <string>
 #include <unordered_set>
 
 #include "core/algorithms/rfd/distance_metric.h"
-#include "core/config/custom_metric/custom_metrics/option.h"
+#include "core/config/custom_metric/custom_metrics/type.h"
 #include "core/config/descriptions.h"
 #include "core/config/exceptions.h"
 #include "core/config/names.h"
@@ -70,7 +71,8 @@ void GaRfd::MakeExecuteOptsAvailable() {
     using namespace config::names;
     MakeOptionsAvailable({kRfdMinSimilarity, kRfdMinimumConfidence, kPopulationSize,
                            kRfdMaxGenerations, kRfdCrossoverProbability, kRfdMutationProbability,
-                           kSeed, kRngEngine, kMetrics, kCacheMaxSize, kThreads});
+                           kSeed, kRngEngine, kMetrics, kCacheMaxSize, kThreads,
+                           kPrecomputeSupport});
 }
 
 void GaRfd::RegisterOptions() {
@@ -88,7 +90,29 @@ void GaRfd::RegisterOptions() {
     };
 
     RegisterOption(config::kTableOpt(&input_table_));
-    RegisterOption(config::MetricsOption{kMetrics, kDRfdMetrics}(&metrics_, get_num_columns));
+    // GA-RFD default metric is exact equality.
+    RegisterOption(
+            Option<config::CustomMetricsType>{
+                    &metrics_, kMetrics, kDRfdMetrics,
+                    Option<config::CustomMetricsType>::DefaultFunc([get_num_columns]() {
+                        return config::CustomMetricsType(get_num_columns(), EqualityMetric());
+                    })}
+                    .SetNormalizeFunc([](config::CustomMetricsType& metrics) {
+                        auto equality = EqualityMetric();
+                        for (auto& metric : metrics) {
+                            if (metric == nullptr ||
+                                dynamic_cast<::util::DefaultCustomMetric const*>(
+                                        metric.get()) != nullptr) {
+                                metric = equality;
+                            }
+                        }
+                    })
+                    .SetValueCheck([get_num_columns](config::CustomMetricsType const& metrics) {
+                        if (metrics.size() != get_num_columns()) {
+                            throw config::ConfigurationError(
+                                    "metrics size must match the number of attributes");
+                        }
+                    }));
     RegisterOption(
             Option<std::vector<double>>{
                     &min_similarity_, kRfdMinSimilarity, kDRfdMinSimilarity,
@@ -96,7 +120,9 @@ void GaRfd::RegisterOptions() {
                         return std::vector<double>(get_num_columns(), 1.0);
                     })}
                     .SetNormalizeFunc([get_num_columns](auto& similarities) {
-                        if (similarities.size() == 1) {
+                        if (similarities.empty()) {
+                            similarities.assign(get_num_columns(), 1.0);
+                        } else if (similarities.size() == 1) {
                             similarities.assign(get_num_columns(), similarities.front());
                         }
                     })
@@ -129,6 +155,8 @@ void GaRfd::RegisterOptions() {
     RegisterOption(Option{&seed_, kSeed, kDSeed, static_cast<std::uint32_t>(123)});
     RegisterOption(Option{&rng_engine_, kRngEngine, kDRngEngine, RngEngine::kMt19937});
     RegisterOption(config::kThreadNumberOpt(&threads_));
+    RegisterOption(Option{&precompute_mode_, kPrecomputeSupport, kDPrecomputeSupport,
+                          PrecomputeMode::kAuto});
     RegisterOption(Option{&cache_max_size_, kCacheMaxSize, kDCacheMaxSize,
                           static_cast<std::size_t>(10000)});
 }
@@ -147,13 +175,6 @@ void GaRfd::LoadDataInternal() {
     full_mask_ = (1u << num_attributes_) - 1;
 
     total_pairs_ = num_rows_ * (num_rows_ - 1) / 2;
-
-    for (auto& metric : metrics_) {
-        if (metric == nullptr ||
-            dynamic_cast<::util::DefaultCustomMetric const*>(metric.get()) != nullptr) {
-            metric = EqualityMetric();
-        }
-    }
 
     LOG_INFO("Loaded {} rows, {} attributes, {} total pairs", num_rows_, num_attributes_,
              total_pairs_);
@@ -241,9 +262,100 @@ void GaRfd::BuildMatchBitsets() {
         }
         LOG_INFO("Match bitsets built for {} attributes", num_attributes_);
     }
+
+    // Precompute support for O(1) lookups during evolution.
+    std::size_t const words_per_attr = (total_pairs_ + 63) / 64;
+    constexpr std::size_t kMaxPrecomputeOps = 1'000'000'000;
+    std::size_t const table_size = num_attributes_ >= 32
+                                           ? std::numeric_limits<std::size_t>::max()
+                                           : (std::size_t{1} << num_attributes_);
+    bool const can_precompute =
+            num_attributes_ < 20 && table_size <= (std::size_t{1} << 20) &&
+            table_size * num_attributes_ * words_per_attr <= kMaxPrecomputeOps;
+    bool want_precompute = false;
+    if (precompute_mode_ == PrecomputeMode::kOff) {
+        LOG_INFO("Skipping support precompute (precompute_support=off); using on-the-fly compute");
+    } else if (precompute_mode_ == PrecomputeMode::kOn) {
+        constexpr std::size_t kMaxForcedTable = std::size_t{1} << 26;
+        if (table_size > kMaxForcedTable) {
+            throw config::ConfigurationError(
+                    "precompute_support=on requires the support index to hold at most 2^26 "
+                    "masks; use auto or off for wider tables");
+        }
+        want_precompute = true;
+    } else {
+        want_precompute = can_precompute;
+        if (!can_precompute) {
+            LOG_INFO(
+                    "Skipping support precompute (attrs={}, pairs={}); using on-the-fly compute",
+                    num_attributes_, total_pairs_);
+        }
+    }
+    if (want_precompute) {
+        BuildSupportIndex();
+    }
+}
+
+void GaRfd::BuildSupportIndex() {
+    std::size_t const table_size = std::size_t{1} << num_attributes_;
+    support_index_.assign(table_size, 0);
+    support_index_[0] = total_pairs_;
+
+    std::size_t const vec_size =
+            attribute_match_bits_.empty() ? 0 : attribute_match_bits_.front().size();
+
+    auto reduce_mask = [this, vec_size](uint32_t mask) {
+        thread_local std::vector<uint64_t> buf;
+        if (buf.size() != vec_size) buf.resize(vec_size);
+
+        uint32_t mm = mask;
+        int a = FirstSetBitIndex(mm);
+        mm &= mm - 1;
+
+        std::memcpy(buf.data(), attribute_match_bits_[a].data(),
+                    vec_size * sizeof(uint64_t));
+
+        bool zero = false;
+        while (mm) {
+            int b = FirstSetBitIndex(mm);
+            auto const& other = attribute_match_bits_[b];
+            std::size_t running = 0;
+            for (std::size_t k = 0; k < vec_size; ++k) {
+                buf[k] &= other[k];
+                running += std::popcount(buf[k]);
+            }
+            if (running == 0) {
+                zero = true;
+                break;
+            }
+            mm &= mm - 1;
+        }
+
+        if (zero) {
+            support_index_[mask] = 0;
+            return;
+        }
+
+        std::size_t support = 0;
+        for (std::size_t k = 0; k < vec_size; ++k) support += std::popcount(buf[k]);
+        support_index_[mask] = support;
+    };
+
+    if (threads_ > 1 && table_size > 1) {
+        ::util::WorkerThreadPool pool(threads_);
+        pool.ExecIndex(
+                [&reduce_mask](model::Index m) { reduce_mask(static_cast<uint32_t>(m + 1)); },
+                static_cast<model::Index>(table_size - 1));
+    } else {
+        for (uint32_t mask = 1; mask < table_size; ++mask) reduce_mask(mask);
+    }
 }
 
 std::size_t GaRfd::ComputeSupport(uint32_t attributes_mask) const {
+    if (!support_index_.empty()) [[likely]] {
+        return support_index_[attributes_mask];
+    }
+
     if (auto cached = support_cache_->Get(attributes_mask)) return *cached;
 
     if (attributes_mask == 0) [[unlikely]] {
@@ -598,6 +710,8 @@ void GaRfd::ExecuteInternal() {
 void GaRfd::ResetState() {
     discovered_.clear();
     support_cache_.reset();
+    support_index_.clear();
+    attribute_match_bits_.clear();
 }
 
 GaRfd::~GaRfd() {

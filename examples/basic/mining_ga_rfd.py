@@ -269,6 +269,9 @@ print("""
                           'pcg32', 'xoshiro256' or 'minstd_rand' (default 'mt19937')
   threads               - number of worker threads for bitset construction
                           (0 or 1 = single-threaded, default 0)
+  precompute_support    - support index mode: 'auto' (default, precompute only
+                          for small tables), 'on' (always precompute) or 'off'
+                          (never precompute, lowest memory)
   cache_size            - maximum number of cached comparisons, the bigger 
                           the faster the algorithm will be (default 10000)
 """)
@@ -355,7 +358,7 @@ algo_rfd = desbordante.rfd.algorithms.GaRfd()
 algo_rfd.load_data(table=(DATA_PATH, ",", True))
 algo_rfd.execute(metrics=[abs_diff, abs_diff, abs_diff],
                  min_similarity=[0.95], minconf=0.7, max_generations=500, seed=42,
-                 threads=0, rng_engine='mt19937')
+                 threads=0, rng_engine='mt19937', precompute_support='auto')
 rfds = algo_rfd.get_rfds()
 
 highlight_key = make_rfd_key(COL_NAMES, ["height_cm", "weight_kg"], "shoe_size_eu")
@@ -816,6 +819,18 @@ printlns(
     "with a fixed seed: 'threads = 1' and 'threads = 4' produce "
     "the exact same RFD set. Use 0 or 1 for single-threaded execution; higher "
     "values can speed up large datasets."
+)
+printlns(
+    "  The precompute_support option controls the support index, a table that stores "
+    "the support of every attribute mask up front so evolution does O(1) lookups "
+    "instead of intersecting bitsets on every evaluation. 'auto' (the default) builds "
+    "it only for small tables. Turning it 'on' forces it even for large tables: "
+    "evolution gets much faster when populations and generation counts are big, but "
+    "you pay upfront time and 8 bytes of memory per mask (2^num_attributes entries), "
+    "so for wide tables prefer 'auto'. Turning it 'off' skips the index entirely for "
+    "the lowest memory footprint at the cost of slower evolution. "
+    "Tables where every column uses exact equality do not build bitsets at all "
+    "(they use direct or lazy exact support instead), so the switch does not apply to them."
 )
 
 # ------------------------------------------------------------

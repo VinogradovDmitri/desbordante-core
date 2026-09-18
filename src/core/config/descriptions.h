@@ -140,6 +140,8 @@ constexpr auto kDRfdMutationProbability = "probability of mutating an individual
 constexpr auto kDRfdMaxGenerations = "maximum number of genetic algorithm generations";
 constexpr auto kDCacheMaxSize = "maximum size of the support cache";
 constexpr auto kDRngEngine = "random number generator engine used by the genetic algorithm";
+constexpr auto kDPrecomputeSupport =
+        "support precompute mode: auto (only for small tables), on (always), off (never)";
 // GFD
 constexpr auto kDGfdData = "Path to file with GFD";
 constexpr auto kDGraphData = "Path to dot-file with graph";
