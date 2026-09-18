@@ -14,9 +14,20 @@ Footprint (only these get comments):
 - `examples/…` + `examples/test_examples/snapshots`
 
 Out of scope (no comments): other primitives, shared infrastructure
-(`util/`, `model/`, `config/`, `parser/`, `logging/`), CI/packaging,
+(`util/`, `model/`, `config/`, `parser/`, `util/logger.h`), CI/packaging,
 unrelated CMake — unless the algorithm misuses them; mention briefly
 as observations only.
+
+Source layout (`src/core/` — what a new algorithm is likely to need):
+- `model/` — basic table representation (tables, PLIs, types)
+- `util/` — shared data structures and helpers the algorithms rely on
+  (incl. the external spdlog-based `logger.h` — don't touch)
+- `config/` — option system (`Option<T>`, names/descriptions)
+- `parser/` — csv/graph/sequence parsers
+- `algorithms/` — the main algorithm logic (the review footprint)
+
+The wiki's `core/`, `caching/`, `custom/`, `logging/` directories no longer
+exist (caching helpers survive as `util/caching_method.h` et al.).
 
 ## Toolchain matrix
 
@@ -196,10 +207,11 @@ that `make review` does not cover:
    (memory errors), `helgrind` and `drd` (data races, deadlocks) —
    any error is Blocking. Profiling tools (`perf`, callgrind) confirm
    suspected hot spots before reporting.
- 10. **Delivery**: `commits` → fix each issue straight in the worktree,
-     **one commit per issue** (single-line subject); at the end propose
-     squashing and free the worktree (`git worktree remove --force
-     bin/<name>`). `patches` → produce one stable numbered patch per
+  10. **Delivery**: `commits` → fix each issue straight in the worktree,
+      **one commit per issue** (subject per the commit style in
+      `llm/CLAUDE.md` §9); at the end propose
+      squashing and free the worktree (`git worktree remove --force
+      bin/<name>`). `patches` → produce one stable numbered patch per
      accepted issue and verify the series. `report` → zero code changes;
      write `report.md` with quoted evidence and each suggested fix in a
      fenced code block.

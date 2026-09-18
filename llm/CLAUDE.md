@@ -131,7 +131,11 @@ knowledge graph before non-trivial work (§7); warn if missing/stale.
 Surgical, style-matching edits; clang-format / cmake-format on changed
 files; add a fill-in template in `llm/templates/` when a task type
 repeats. Commit messages (only when explicitly asked): single-line
-subject, no description (repo convention).
+subject by default, no description. Subject rules (always): ~50
+characters or less, capitalized, imperative mood, no trailing dot. When
+the user asks for a body (multi-line needs ASK FIRST): separate from the
+subject by an empty line; lines ≤ 72 characters; describe what changed
+and why, not how; omit the body when the subject makes both obvious.
 
 **ASK FIRST** (destructive, costly, one-way, ambiguous): deleting
 files/branches, `git reset`/`git rebase`, dropping data, `rm` beyond
