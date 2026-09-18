@@ -282,4 +282,23 @@ TEST(GARfdOperators, ZeroCrossoverAndMutation) {
     EXPECT_GE(rfds.size(), 0);
 }
 
+TEST(GARfdThreads, ThreadsOptionRunsAndReproduces) {
+    auto metrics = EqualityMetrics(5);
+    auto params1 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+    auto params4 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+    params1[config_names::kThreads] = static_cast<config::ThreadNumType>(1);
+    params4[config_names::kThreads] = static_cast<config::ThreadNumType>(4);
+
+    auto algo1 = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params1);
+    auto algo4 = algos::CreateAndLoadAlgorithm<rfd::GaRfd>(params4);
+    algo1->Execute();
+    algo4->Execute();
+
+    auto r1 = algo1->GetRfds();
+    auto r4 = algo4->GetRfds();
+    std::set<rfd::RFD> set1(r1.begin(), r1.end());
+    std::set<rfd::RFD> set4(r4.begin(), r4.end());
+    EXPECT_EQ(set1, set4) << "Multi-threaded run must match single-threaded for a fixed seed";
+}
+
 }  // namespace tests

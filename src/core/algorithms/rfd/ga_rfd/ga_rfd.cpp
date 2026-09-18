@@ -1,6 +1,7 @@
 #include "ga_rfd.h"
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <bitset>
 #include <cassert>
@@ -20,8 +21,11 @@
 #include "core/config/names.h"
 #include "core/config/option_using.h"
 #include "core/config/tabular_data/input_table/option.h"
+#include "core/config/thread_number/option.h"
+#include "core/model/index.h"
 #include "core/util/custom_metric/custom_metric.h"
 #include "core/util/logger.h"
+#include "core/util/worker_thread_pool.h"
 
 namespace {
 
@@ -38,6 +42,20 @@ inline int FirstSetBitIndex(uint32_t value) noexcept {
     return value == 0 ? -1 : static_cast<int>(std::countr_zero(value));
 }
 
+// Merges one 64-pair block; atomic for words shared at chunk boundaries.
+inline void DepositBlock(std::vector<uint64_t>& bits, std::size_t pair0, uint64_t word) {
+    unsigned const r = static_cast<unsigned>(pair0 & 63);
+    std::size_t const w0 = pair0 >> 6;
+    if (r == 0) {
+        std::atomic_ref<uint64_t>(bits[w0]).fetch_or(word, std::memory_order::relaxed);
+    } else {
+        std::atomic_ref<uint64_t>(bits[w0]).fetch_or(word << r, std::memory_order::relaxed);
+        if (w0 + 1 < bits.size())
+            std::atomic_ref<uint64_t>(bits[w0 + 1])
+                    .fetch_or(word >> (64 - r), std::memory_order::relaxed);
+    }
+}
+
 }  // namespace
 
 namespace algos::rfd {
@@ -51,8 +69,8 @@ GaRfd::GaRfd() : Algorithm() {
 void GaRfd::MakeExecuteOptsAvailable() {
     using namespace config::names;
     MakeOptionsAvailable({kRfdMinSimilarity, kRfdMinimumConfidence, kPopulationSize,
-                          kRfdMaxGenerations, kRfdCrossoverProbability, kRfdMutationProbability,
-                          kSeed, kMetrics, kCacheMaxSize});
+                           kRfdMaxGenerations, kRfdCrossoverProbability, kRfdMutationProbability,
+                           kSeed, kMetrics, kCacheMaxSize, kThreads});
 }
 
 void GaRfd::RegisterOptions() {
@@ -109,6 +127,7 @@ void GaRfd::RegisterOptions() {
             Option{&mutation_probability_, kRfdMutationProbability, kDRfdMutationProbability, 1.0}
                     .SetValueCheck(check_probability_range));
     RegisterOption(Option{&seed_, kSeed, kDSeed, static_cast<std::uint32_t>(123)});
+    RegisterOption(config::kThreadNumberOpt(&threads_));
     RegisterOption(Option{&cache_max_size_, kCacheMaxSize, kDCacheMaxSize,
                           static_cast<std::size_t>(10000)});
 }
@@ -139,6 +158,52 @@ void GaRfd::LoadDataInternal() {
              total_pairs_);
 }
 
+void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                  std::size_t row_end) {
+    auto const& column_data = typed_relation_->GetColumnData();
+    auto const& column = column_data[attribute];
+    auto& bits = attribute_match_bits_[attribute];
+    // Core uses distances internally; the user-facing threshold is a
+    // similarity in [0, 1], so distance threshold is 1 - similarity
+    double const max_distance = 1.0 - min_similarity_[attribute];
+    auto const& metric = *metrics_[attribute];
+    model::Type const& column_type = column.GetType();
+
+    // NULLs and empty values never count as matching
+    bool const is_mixed = column.GetTypeId() == model::TypeId::kMixed;
+    std::vector<bool> valid(is_mixed ? 0 : num_rows_);
+    if (!is_mixed) {
+        for (std::size_t row = 0; row < num_rows_; ++row) {
+            valid[row] = !column.IsNullOrEmpty(row);
+        }
+    }
+
+    for (std::size_t first_row = row_begin; first_row < row_end; ++first_row) {
+        std::byte const* first_value;
+        if (is_mixed) {
+            first_value = column.GetValue(first_row);
+        } else {
+            first_value = valid[first_row] ? column.GetValue(first_row) : nullptr;
+        }
+        if (first_value == nullptr) continue;
+        std::size_t const base = first_row * num_rows_ - first_row * (first_row + 1) / 2;
+        // One atomic deposit per 64-pair block.
+        for (std::size_t second_row = first_row + 1; second_row < num_rows_;
+             second_row += 64) {
+            std::size_t const pair0 = base + second_row - first_row - 1;
+            std::size_t const block_end = std::min(second_row + 64, num_rows_);
+            uint64_t word = 0;
+            for (std::size_t k = 0; k < block_end - second_row; ++k) {
+                bool match = (is_mixed || valid[second_row + k]) &&
+                             metric.Dist(&column_type, first_value,
+                                         column.GetValue(second_row + k)) <= max_distance;
+                if (match) word |= (uint64_t{1} << k);
+            }
+            if (word != 0) DepositBlock(bits, pair0, word);
+        }
+    }
+}
+
 void GaRfd::BuildMatchBitsets() {
     if (!support_cache_) {
         support_cache_ = std::make_unique<util::LRUCache<uint32_t, std::size_t>>(cache_max_size_);
@@ -147,52 +212,34 @@ void GaRfd::BuildMatchBitsets() {
     attribute_match_bits_.assign(num_attributes_,
                                  std::vector<uint64_t>(num_words_per_attribute, 0));
 
-    auto const& column_data = typed_relation_->GetColumnData();
-    for (std::size_t attribute = 0; attribute < num_attributes_; ++attribute) {
-        auto const& column = column_data[attribute];
-        auto& bits = attribute_match_bits_[attribute];
-        // Core uses distances internally; the user-facing threshold is a
-        // similarity in [0, 1], so distance threshold is 1 - similarity
-        double const max_distance = 1.0 - min_similarity_[attribute];
-        auto const& metric = *metrics_[attribute];
-        model::Type const& column_type = column.GetType();
-
-        // NULLs and empty values never count as matching
-        bool const is_mixed = column.GetTypeId() == model::TypeId::kMixed;
-        std::vector<bool> valid(is_mixed ? 0 : num_rows_);
-        if (!is_mixed) {
-            for (std::size_t row = 0; row < num_rows_; ++row) {
-                valid[row] = !column.IsNullOrEmpty(row);
-            }
+    std::size_t const num_threads =
+            threads_ > 1 ? static_cast<std::size_t>(threads_) : std::size_t{1};
+    // Row chunks keep all threads busy when attributes are few.
+    std::size_t const chunks = std::max<std::size_t>(1, std::min(num_threads, num_rows_));
+    std::size_t const chunk_size = (num_rows_ + chunks - 1) / chunks;
+    if (num_threads > 1) {
+        std::size_t const total_tasks = num_attributes_ * chunks;
+        ::util::WorkerThreadPool pool(threads_);
+        pool.ExecIndex(
+                [this, chunks, chunk_size](model::Index t) {
+                    std::size_t const attribute = static_cast<std::size_t>(t) / chunks;
+                    std::size_t const chunk = static_cast<std::size_t>(t) % chunks;
+                    std::size_t const row_begin = chunk * chunk_size;
+                    std::size_t const row_end = std::min(row_begin + chunk_size, num_rows_);
+                    if (row_begin < row_end) {
+                        BuildMatchBitsetRange(attribute, row_begin, row_end);
+                    }
+                },
+                static_cast<model::Index>(total_tasks));
+        LOG_INFO("Match bitsets built for {} attributes on {} threads", num_attributes_,
+                 num_threads);
+    } else {
+        for (std::size_t attribute = 0; attribute < num_attributes_; ++attribute) {
+            BuildMatchBitsetRange(attribute, 0, num_rows_);
+            LOG_INFO("Finished attribute {} match bitset", attribute);
         }
-
-        uint64_t word_mask = 1;
-        std::size_t word_index = 0;
-
-        for (std::size_t first_row = 0; first_row < num_rows_; ++first_row) {
-            std::byte const* first_value;
-            if (is_mixed) {
-                first_value = column.GetValue(first_row);
-            } else {
-                first_value = valid[first_row] ? column.GetValue(first_row) : nullptr;
-            }
-            for (std::size_t second_row = first_row + 1; second_row < num_rows_; ++second_row) {
-                bool match = first_value != nullptr && (is_mixed || valid[second_row]) &&
-                             metric.Dist(&column_type, first_value, column.GetValue(second_row)) <=
-                                     max_distance;
-                if (match) {
-                    bits[word_index] |= word_mask;
-                }
-                word_mask <<= 1;
-                if (word_mask == 0) {
-                    word_mask = 1;
-                    ++word_index;
-                }
-            }
-        }
-        LOG_INFO("Finished attribute {} match bitset", attribute);
+        LOG_INFO("Match bitsets built for {} attributes", num_attributes_);
     }
-    LOG_INFO("Match bitsets built for {} attributes", num_attributes_);
 }
 
 std::size_t GaRfd::ComputeSupport(uint32_t attributes_mask) const {

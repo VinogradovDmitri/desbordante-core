@@ -265,6 +265,8 @@ print("""
                           or a list of values (one per column). Values 
                           must be in [0,1]. (default {1.0, 1.0, ...})
   seed                  - seed for reproducible results (default 123)
+  threads               - number of worker threads for bitset construction
+                          (0 or 1 = single-threaded, default 0)
   cache_size            - maximum number of cached comparisons, the bigger 
                           the faster the algorithm will be (default 10000)
 """)
@@ -350,7 +352,8 @@ print_table(df)
 algo_rfd = desbordante.rfd.algorithms.GaRfd()
 algo_rfd.load_data(table=(DATA_PATH, ",", True))
 algo_rfd.execute(metrics=[abs_diff, abs_diff, abs_diff],
-                 min_similarity=[0.95], minconf=0.7, max_generations=500, seed=42)
+                 min_similarity=[0.95], minconf=0.7, max_generations=500, seed=42,
+                 threads=0)
 rfds = algo_rfd.get_rfds()
 
 highlight_key = make_rfd_key(COL_NAMES, ["height_cm", "weight_kg"], "shoe_size_eu")
@@ -790,6 +793,12 @@ printlns(
     "same results across runs, always set the seed parameter: " + 
     "algo.execute(seed=42). Without a fixed seed, two runs with the " + 
     "same parameters may return slightly different sets of RFDs."
+)
+printlns(
+    "  The threads option does not affect reproducibility and "
+    "with a fixed seed: 'threads = 1' and 'threads = 4' produce "
+    "the exact same RFD set. Use 0 or 1 for single-threaded execution; higher "
+    "values can speed up large datasets."
 )
 
 # ------------------------------------------------------------

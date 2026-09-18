@@ -20,6 +20,7 @@
 #include "core/algorithms/rfd/rfd.h"
 #include "core/config/custom_metric/custom_metrics/type.h"
 #include "core/config/tabular_data/input_table_type.h"
+#include "core/config/thread_number/type.h"
 #include "core/model/table/column_layout_typed_relation_data.h"
 
 namespace tests {
@@ -74,6 +75,7 @@ private:
     double crossover_probability_ = 1.0;
     double mutation_probability_ = 1.0;
     std::uint32_t seed_ = 123;  // random number generator seed
+    config::ThreadNumType threads_ = 0;
 
     std::unordered_set<RFD, RFDHash> discovered_;
 
@@ -86,6 +88,8 @@ private:
 
     // helper methods
     void BuildMatchBitsets();
+    void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
+                               std::size_t row_end);
     std::size_t ComputeSupport(uint32_t attributes_mask) const;
     // Computes conf and supp for a single individual
     Individual Evaluate(Individual const& individual) const;
