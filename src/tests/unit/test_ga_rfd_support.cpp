@@ -198,8 +198,7 @@ TEST(GARfdSupport, LazySupportMatchesPrecomputed) {
 
     GaRfdTester::ForceLazyMode(*algo);
     for (uint32_t mask = 0; mask < (1u << 5); ++mask) {
-        EXPECT_EQ(GaRfdTester::ComputeSupport(*algo, mask), precomputed[mask])
-                << "mask=" << mask;
+        EXPECT_EQ(GaRfdTester::ComputeSupport(*algo, mask), precomputed[mask]) << "mask=" << mask;
     }
 
     // The computed values must be cached and stable across repeated queries.

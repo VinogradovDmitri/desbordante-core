@@ -71,9 +71,9 @@ GaRfd::GaRfd() : Algorithm() {
 void GaRfd::MakeExecuteOptsAvailable() {
     using namespace config::names;
     MakeOptionsAvailable({kRfdMinSimilarity, kRfdMinimumConfidence, kPopulationSize,
-                           kRfdMaxGenerations, kRfdCrossoverProbability, kRfdMutationProbability,
-                           kSeed, kRngEngine, kMetrics, kCacheMaxSize, kThreads,
-                           kPrecomputeSupport});
+                          kRfdMaxGenerations, kRfdCrossoverProbability, kRfdMutationProbability,
+                          kSeed, kRngEngine, kMetrics, kCacheMaxSize, kThreads,
+                          kPrecomputeSupport});
 }
 
 void GaRfd::RegisterOptions() {
@@ -102,8 +102,8 @@ void GaRfd::RegisterOptions() {
                         auto equality = EqualityMetric();
                         for (auto& metric : metrics) {
                             if (metric == nullptr ||
-                                dynamic_cast<::util::DefaultCustomMetric const*>(
-                                        metric.get()) != nullptr) {
+                                dynamic_cast<::util::DefaultCustomMetric const*>(metric.get()) !=
+                                        nullptr) {
                                 metric = equality;
                             }
                         }
@@ -197,8 +197,7 @@ void GaRfd::PrepareExactEquality() {
         // Nulls get unique ids so they never match.
         for (std::size_t row = 0; row < num_rows_; ++row) {
             if (column.IsNullOrEmpty(row)) {
-                uint32_t const id =
-                        static_cast<uint32_t>(equality_groups_[attribute].size());
+                uint32_t const id = static_cast<uint32_t>(equality_groups_[attribute].size());
                 column_ids_[attribute][row] = id;
                 equality_groups_[attribute].push_back({row});
                 continue;
@@ -213,8 +212,7 @@ void GaRfd::PrepareExactEquality() {
                 double value;
                 std::memcpy(&value, bytes, sizeof(double));
                 if (std::isnan(value)) {
-                    uint32_t const id =
-                            static_cast<uint32_t>(equality_groups_[attribute].size());
+                    uint32_t const id = static_cast<uint32_t>(equality_groups_[attribute].size());
                     column_ids_[attribute][row] = id;
                     equality_groups_[attribute].push_back({row});
                     continue;
@@ -226,8 +224,7 @@ void GaRfd::PrepareExactEquality() {
             }
             auto it = id_map.find(key);
             if (it == id_map.end()) {
-                uint32_t const fresh =
-                        static_cast<uint32_t>(equality_groups_[attribute].size());
+                uint32_t const fresh = static_cast<uint32_t>(equality_groups_[attribute].size());
                 it = id_map.emplace(key, fresh).first;
                 equality_groups_[attribute].push_back({});
             }
@@ -271,8 +268,7 @@ void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
         if (first_value == nullptr) continue;
         std::size_t const base = first_row * num_rows_ - first_row * (first_row + 1) / 2;
         // One atomic deposit per 64-pair block.
-        for (std::size_t second_row = first_row + 1; second_row < num_rows_;
-             second_row += 64) {
+        for (std::size_t second_row = first_row + 1; second_row < num_rows_; second_row += 64) {
             std::size_t const pair0 = base + second_row - first_row - 1;
             std::size_t const block_end = std::min(second_row + 64, num_rows_);
             uint64_t word = 0;
@@ -296,11 +292,10 @@ void GaRfd::BuildMatchBitsets() {
 
     PrepareExactEquality();
 
-    bool const all_exact = std::ranges::all_of(
-            column_ids_, [](auto const& ids) { return !ids.empty(); });
+    bool const all_exact =
+            std::ranges::all_of(column_ids_, [](auto const& ids) { return !ids.empty(); });
     constexpr std::size_t kMaxDirectRows = std::size_t{1} << 22;
-    if (all_exact && num_attributes_ < 24 &&
-        num_rows_ <= (kMaxDirectRows >> num_attributes_)) {
+    if (all_exact && num_attributes_ < 24 && num_rows_ <= (kMaxDirectRows >> num_attributes_)) {
         BuildSupportIndexDirect();
         return;
     }
@@ -347,12 +342,10 @@ void GaRfd::BuildMatchBitsets() {
     // Precompute support for O(1) lookups during evolution.
     std::size_t const words_per_attr = (total_pairs_ + 63) / 64;
     constexpr std::size_t kMaxPrecomputeOps = 1'000'000'000;
-    std::size_t const table_size = num_attributes_ >= 32
-                                           ? std::numeric_limits<std::size_t>::max()
-                                           : (std::size_t{1} << num_attributes_);
-    bool const can_precompute =
-            num_attributes_ < 20 && table_size <= (std::size_t{1} << 20) &&
-            table_size * num_attributes_ * words_per_attr <= kMaxPrecomputeOps;
+    std::size_t const table_size = num_attributes_ >= 32 ? std::numeric_limits<std::size_t>::max()
+                                                         : (std::size_t{1} << num_attributes_);
+    bool const can_precompute = num_attributes_ < 20 && table_size <= (std::size_t{1} << 20) &&
+                                table_size * num_attributes_ * words_per_attr <= kMaxPrecomputeOps;
     bool want_precompute = false;
     if (precompute_mode_ == PrecomputeMode::kOff) {
         LOG_INFO("Skipping support precompute (precompute_support=off); using on-the-fly compute");
@@ -367,9 +360,8 @@ void GaRfd::BuildMatchBitsets() {
     } else {
         want_precompute = can_precompute;
         if (!can_precompute) {
-            LOG_INFO(
-                    "Skipping support precompute (attrs={}, pairs={}); using on-the-fly compute",
-                    num_attributes_, total_pairs_);
+            LOG_INFO("Skipping support precompute (attrs={}, pairs={}); using on-the-fly compute",
+                     num_attributes_, total_pairs_);
         }
     }
     if (want_precompute) {
@@ -393,8 +385,7 @@ void GaRfd::BuildSupportIndex() {
         int a = FirstSetBitIndex(mm);
         mm &= mm - 1;
 
-        std::memcpy(buf.data(), attribute_match_bits_[a].data(),
-                    vec_size * sizeof(uint64_t));
+        std::memcpy(buf.data(), attribute_match_bits_[a].data(), vec_size * sizeof(uint64_t));
 
         bool zero = false;
         while (mm) {
@@ -510,11 +501,9 @@ void GaRfd::BuildSupportIndexDirect() {
         }
         if (level.empty()) continue;
         if (pool) {
-            pool->ExecIndex(
-                    [&refine_mask, &level](model::Index i) {
-                        refine_mask(level[static_cast<size_t>(i)]);
-                    },
-                    static_cast<model::Index>(level.size()));
+            pool->ExecIndex([&refine_mask, &level](
+                                    model::Index i) { refine_mask(level[static_cast<size_t>(i)]); },
+                            static_cast<model::Index>(level.size()));
         } else {
             for (uint32_t mask : level) refine_mask(mask);
         }

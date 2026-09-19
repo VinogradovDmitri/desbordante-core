@@ -3203,6 +3203,13 @@ The main parameters you can set:
                           or a list of values (one per column). Values 
                           must be in [0,1]. (default {1.0, 1.0, ...})
   seed                  - seed for reproducible results (default 123)
+  rng_engine            - random number generator engine: one of 'mt19937',
+                          'pcg32', 'xoshiro256' or 'minstd_rand' (default 'mt19937')
+  threads               - number of worker threads for bitset construction
+                          (0 or 1 = single-threaded, default 0)
+  precompute_support    - support index mode: 'auto' (default, precompute only
+                          for small tables), 'on' (always precompute) or 'off'
+                          (never precompute, lowest memory)
   cache_size            - maximum number of cached comparisons, the bigger 
                           the faster the algorithm will be (default 10000)
 
@@ -3539,6 +3546,34 @@ probably be necessary to experiment with the threshold values.
 results across runs, always set the seed parameter: algo.execute(seed=42).
 Without a fixed seed, two runs with the same parameters may return slightly
 different sets of RFDs.
+
+  The rng_engine option chooses the underlying generator: 'mt19937' (the
+default, large internal state, good statistical quality), 'pcg32' and
+'xoshiro256' (smaller, faster state and faster per-call throughput, which can
+shorten the inner GA loops), and 'minstd_rand' (a tiny 32-bit LCG, the cheapest
+engine, useful when RNG throughput is the limiting factor). All of them are
+deterministic given a seed; they just explore the search space differently, so
+results may vary between engines even with the same seed.
+
+  Reproducibility is determined by three things working together: the seed, the
+random number generator engine (rng_engine), and the input data. The same seed
+with the same rng_engine always yields identical RFDs, regardless of how many
+threads you use. This makes experiments comparable and debuggable.
+
+  The threads option does not affect reproducibility and with a fixed seed:
+'threads = 1' and 'threads = 4' produce the exact same RFD set. Use 0 or 1 for
+single-threaded execution; higher values can speed up large datasets.
+
+  The precompute_support option controls the support index, a table that stores
+the support of every attribute mask up front so evolution does O(1) lookups
+instead of intersecting bitsets on every evaluation. 'auto' (the default) builds
+it only for small tables. Turning it 'on' forces it even for large tables:
+evolution gets much faster when populations and generation counts are big, but
+you pay upfront time and 8 bytes of memory per mask (2^num_attributes entries),
+so for wide tables prefer 'auto'. Turning it 'off' skips the index entirely for
+the lowest memory footprint at the cost of slower evolution. Tables where every
+column uses exact equality do not build bitsets at all (they use direct or lazy
+exact support instead), so the switch does not apply to them.
 
 
 ================================================================================

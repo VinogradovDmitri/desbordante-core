@@ -16,9 +16,9 @@
 #include <vector>
 
 #include "core/algorithms/algorithm.h"
+#include "core/algorithms/rfd/ga_rfd/precompute_mode.h"
 #include "core/algorithms/rfd/ga_rfd/rng_engine.h"
 #include "core/algorithms/rfd/ga_rfd/rng_wrapper.h"
-#include "core/algorithms/rfd/ga_rfd/precompute_mode.h"
 #include "core/algorithms/rfd/ga_rfd/util/lru_cache.h"
 #include "core/algorithms/rfd/rfd.h"
 #include "core/config/custom_metric/custom_metrics/type.h"
@@ -103,8 +103,7 @@ private:
     // Interns exact-equality columns to integer ids for fast paths.
     void PrepareExactEquality();
     void BuildMatchBitsets();
-    void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
-                               std::size_t row_end);
+    void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin, std::size_t row_end);
     void BuildSupportIndex();
     void BuildSupportIndexDirect();
     [[nodiscard]] std::size_t ComputeSupportDirect(uint32_t attributes_mask) const;
