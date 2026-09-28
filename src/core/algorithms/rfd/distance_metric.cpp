@@ -76,6 +76,10 @@ public:
     bool IsThreadSafe() const override {
         return true;
     }
+
+    bool IsLevenshtein() const override {
+        return true;
+    }
 };
 
 class AbsoluteDifferenceMetricImpl : public util::ICustomMetric {

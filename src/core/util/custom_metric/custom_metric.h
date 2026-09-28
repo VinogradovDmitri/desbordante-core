@@ -38,6 +38,11 @@ public:
     virtual bool IsAbsoluteDifference() const {
         return false;
     }
+
+    // True for Levenshtein metrics (enables the materialized-strings fast path).
+    virtual bool IsLevenshtein() const {
+        return false;
+    }
 };
 
 /// @brief Provides a convenient way to define custom metric, when column type is known in advance

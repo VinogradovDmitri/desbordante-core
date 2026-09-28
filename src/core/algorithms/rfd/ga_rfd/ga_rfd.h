@@ -102,6 +102,10 @@ private:
     void BuildAbsDiffBitsetRange(std::size_t attribute, std::size_t row_begin,
                                  std::size_t row_end, model::INumericType const* numeric,
                                  std::vector<bool> const& valid, double max_distance);
+    // Levenshtein on materialized strings (identical skip, length filter, bounded DP).
+    void BuildLevBitsetRange(std::size_t attribute, std::size_t row_begin,
+                             std::size_t row_end, std::vector<bool> const& valid,
+                             double max_distance);
     // True when every column metric may run on GIL-less worker threads.
     bool AllMetricsThreadSafe() const;
     std::size_t ComputeSupport(uint32_t attributes_mask);

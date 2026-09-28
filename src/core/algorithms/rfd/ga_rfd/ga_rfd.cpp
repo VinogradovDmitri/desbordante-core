@@ -80,6 +80,31 @@ inline void DepositBlock(std::vector<uint64_t>& bits, std::size_t pair0, uint64_
     }
 }
 
+// Bounded Levenshtein: exact raw distance within bound, else bound + 1.
+inline unsigned BoundedLevenshtein(std::string_view left, std::string_view right, unsigned bound,
+                            std::vector<unsigned>& v0, std::vector<unsigned>& v1) {
+    if (v0.size() <= right.size()) {
+        v0.resize(right.size() + 1);
+        v1.resize(right.size() + 1);
+    }
+    for (std::size_t i = 0; i <= right.size(); ++i) v0[i] = static_cast<unsigned>(i);
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        v1[0] = static_cast<unsigned>(i + 1);
+        unsigned row_min = v1[0];
+        for (std::size_t j = 0; j < right.size(); ++j) {
+            unsigned const substitution = v0[j] + (left[i] == right[j] ? 0u : 1u);
+            unsigned const best = std::min({v0[j + 1] + 1u, v1[j] + 1u, substitution});
+            v1[j + 1] = best;
+            row_min = std::min(row_min, best);
+        }
+        if (row_min > bound) return bound + 1;
+        std::swap(v0, v1);
+    }
+    // NOTE: v0 may be longer than right.size() + 1 from a previous longer
+    // pair (scratch reuse); index explicitly instead of back().
+    return v0[right.size()];
+}
+
 }  // namespace
 
 namespace algos::rfd {
@@ -242,6 +267,63 @@ void GaRfd::BuildAbsDiffBitsetRange(std::size_t attribute, std::size_t row_begin
     }
 }
 
+void GaRfd::BuildLevBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                         std::size_t row_end, std::vector<bool> const& valid,
+                                         double max_distance) {
+    auto const& column = typed_relation_->GetColumnData()[attribute];
+    auto& bits = similar_pair_bits_[attribute];
+    model::Type const& column_type = column.GetType();
+    // Materialize once with the exact call the generic path uses per pair.
+    std::vector<std::string> strings(num_rows_);
+    for (std::size_t row = 0; row < num_rows_; ++row) {
+        if (valid[row]) strings[row] = column_type.ValueToString(column.GetValue(row));
+    }
+    thread_local std::vector<unsigned> v0, v1;
+    for (std::size_t first_row = row_begin; first_row < row_end; ++first_row) {
+        if (!valid[first_row]) continue;
+        std::string const& first_str = strings[first_row];
+        std::size_t const base = first_row * num_rows_ - first_row * (first_row + 1) / 2;
+        for (std::size_t second_row = first_row + 1; second_row < num_rows_;
+             second_row += 64) {
+            std::size_t const pair0 = base + second_row - first_row - 1;
+            std::size_t const block_end = std::min(second_row + 64, num_rows_);
+            uint64_t word = 0;
+            for (std::size_t k = 0; k < block_end - second_row; ++k) {
+                if (!valid[second_row + k]) continue;
+                std::string const& second_str = strings[second_row + k];
+                bool match = false;
+                if (first_str == second_str) {
+                    match = (0.0 <= max_distance);
+                } else {
+                    std::size_t const max_len = std::max(first_str.size(), second_str.size());
+                    if (max_len == 0) {
+                        match = (0.0 <= max_distance);
+                    } else {
+                        double const scaled = max_len * max_distance;
+                        unsigned const bound = max_distance <= 0.0
+                                                       ? 0u
+                                                       : scaled >= 4294967295.0
+                                                                 ? 4294967295u
+                                                                 : static_cast<unsigned>(scaled);
+                        std::size_t const len_diff =
+                                first_str.size() > second_str.size()
+                                        ? first_str.size() - second_str.size()
+                                        : second_str.size() - first_str.size();
+                        if (len_diff <= bound) {
+                            unsigned const raw =
+                                    BoundedLevenshtein(first_str, second_str, bound, v0, v1);
+                            match = raw <= bound &&
+                                    static_cast<double>(raw) / max_len <= max_distance;
+                        }
+                    }
+                }
+                if (match) word |= (uint64_t{1} << k);
+            }
+            if (word != 0) DepositBlock(bits, pair0, word);
+        }
+    }
+}
+
 void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                            std::size_t row_end,
                                            std::vector<bool> const& valid) {
@@ -258,6 +340,12 @@ void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
         (type_id == model::TypeId::kInt || type_id == model::TypeId::kDouble)) {
         auto const* numeric = static_cast<model::INumericType const*>(&column_type);
         BuildAbsDiffBitsetRange(attribute, row_begin, row_end, numeric, valid, max_distance);
+        return;
+    }
+
+    // Materialized fast path for Levenshtein on plain columns.
+    if (metric.IsLevenshtein()) {
+        BuildLevBitsetRange(attribute, row_begin, row_end, valid, max_distance);
         return;
     }
 
