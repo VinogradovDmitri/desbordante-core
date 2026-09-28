@@ -290,6 +290,12 @@ void GaRfd::BuildMatchBitsets() {
     LOG_INFO("Match bitsets built for {} attributes", num_attributes_);
 }
 
+bool GaRfd::AllMetricsThreadSafe() const {
+    return std::ranges::all_of(metrics_, [](auto const& metric) {
+        return metric == nullptr || metric->IsThreadSafe();
+    });
+}
+
 std::size_t GaRfd::ComputeSupport(uint32_t attributes_mask) {
     if (auto cached = support_cache_->Get(attributes_mask)) return *cached;
 
@@ -647,7 +653,10 @@ std::vector<RFD> GaRfd::Finalize(
 void GaRfd::ExecuteInternal() {
     LOG_INFO("Build match bitsets...");
     // Pool lives for the whole execution (build and parallel support reduces).
-    PoolHolder pool_holder = threads_ > 1 ? PoolHolder{threads_} : PoolHolder{};
+    // Metrics that are not thread-safe (e.g. Python-backed) force the
+    // single-threaded build: worker threads never hold the Python GIL.
+    PoolHolder pool_holder =
+            (threads_ > 1 && AllMetricsThreadSafe()) ? PoolHolder{threads_} : PoolHolder{};
     pool_ = pool_holder.GetPtr();
     BuildMatchBitsets();
     Rng random_generator(rng_engine_, seed_);

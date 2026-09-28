@@ -23,7 +23,15 @@ public:
 
     double Dist(model::Type const* type, std::byte const* first,
                 std::byte const* second) const override {
+        // Callers may run on C++ worker threads without the GIL (the module sets
+        // pybind11::mod_gil_not_used()); reacquire it before touching Python.
+        pybind11::gil_scoped_acquire gil;
         return pybind11::cast<double>(metric_(ValueToPy(type, first), ValueToPy(type, second)));
+    }
+
+    // Python callables need the GIL: GaRfd builds their bitsets single-threaded.
+    bool IsThreadSafe() const override {
+        return false;
     }
 };
 
@@ -44,6 +52,11 @@ public:
             throw config::ConfigurationError("Similarity metric must return a value in [0, 1]");
         }
         return 1.0 - similarity;
+    }
+
+    // Python callables need the GIL (see PyCustomMetric).
+    bool IsThreadSafe() const override {
+        return false;
     }
 };
 

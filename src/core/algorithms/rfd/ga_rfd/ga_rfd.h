@@ -97,6 +97,8 @@ private:
     void BuildMatchBitsets();
     void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                std::size_t row_end, std::vector<bool> const& valid);
+    // True when every column metric may run on GIL-less worker threads.
+    bool AllMetricsThreadSafe() const;
     std::size_t ComputeSupport(uint32_t attributes_mask);
     // Computes conf and supp for a single individual
     Individual Evaluate(Individual const& individual);

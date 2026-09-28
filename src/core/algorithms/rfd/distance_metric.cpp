@@ -38,13 +38,16 @@ std::optional<model::TypeId> ComparableTypeId(model::Type const* type, std::byte
 class EqualityMetricImpl : public util::ICustomMetric {
 public:
     double Dist(model::Type const* type, std::byte const* first,
-                std::byte const* second) const override {
-        if (ComparableTypeId(type, first, second) == std::nullopt) return kDissimilarDist;
+                std::byte const* second) const override {        if (ComparableTypeId(type, first, second) == std::nullopt) return kDissimilarDist;
         bool const equal = type->GetTypeId() == model::TypeId::kMixed
                                    ? static_cast<model::MixedType const*>(type)->Compare(
                                              first, second) == model::CompareResult::kEqual
                                    : type->Compare(first, second) == model::CompareResult::kEqual;
         return equal ? 0.0 : kDissimilarDist;
+    }
+
+    bool IsThreadSafe() const override {
+        return true;
     }
 };
 
@@ -68,6 +71,10 @@ public:
         if (max_len == 0) return 0.0;
         return static_cast<double>(util::LevenshteinDistance(left_str, right_str)) /
                static_cast<double>(max_len);
+    }
+
+    bool IsThreadSafe() const override {
+        return true;
     }
 };
 
@@ -102,6 +109,10 @@ public:
         if (max_absolute == 0.0) return 0.0;
         return absolute_difference / max_absolute;
     }
+
+    bool IsThreadSafe() const override {
+        return true;
+    }
 };
 
 class AbsoluteThresholdMetricImpl : public util::ICustomMetric {
@@ -110,6 +121,10 @@ public:
 
     double Dist(model::Type const* type, std::byte const* first,
                 std::byte const* second) const override;
+
+    bool IsThreadSafe() const override {
+        return true;
+    }
 
 private:
     double tolerance_;

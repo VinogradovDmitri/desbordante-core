@@ -13,6 +13,7 @@
 #include "core/algorithms/rfd/ga_rfd/ga_rfd.h"
 #include "core/config/names.h"
 #include "core/config/tabular_data/input_table_type.h"
+#include "core/model/types/numeric_type.h"
 #include "core/parser/csv_parser/csv_parser.h"
 #include "core/util/custom_metric/custom_metric.h"
 #include "core/util/logger.h"
@@ -322,8 +323,7 @@ TEST(GARfdRng, DifferentEnginesFindValidRfds) {
     }
 }
 
-TEST(GARfdThreads, ThreadsOptionRunsAndReproduces) {
-    auto metrics = EqualityMetrics(5);
+TEST(GARfdThreads, ThreadsOptionRunsAndReproduces) {    auto metrics = EqualityMetrics(5);
     auto params1 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
     auto params4 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
     params1[kThreads] = static_cast<config::ThreadNumType>(1);
@@ -338,6 +338,28 @@ TEST(GARfdThreads, ThreadsOptionRunsAndReproduces) {
     auto r4 = algo4->GetRfds();
     EXPECT_EQ(SortedRfdStrings(r1), SortedRfdStrings(r4))
             << "Multi-threaded run must match single-threaded for a fixed seed";
+}
+
+TEST(GARfdThreads, NonThreadSafeMetricFallsBackToSingleThread) {
+    // DynamicCustomMetric uses the fail-safe IsThreadSafe() == false, so the
+    // bitset build must stay single-threaded (worker threads never hold the
+    // Python GIL) and still produce the same RFDs as threads=1.
+    auto custom = std::make_shared<::util::DynamicCustomMetric>(
+            [](model::Type const* type, std::byte const* first, std::byte const* second) {
+                auto const* numeric = static_cast<model::INumericType const*>(type);
+                return numeric->GetValueAs<double>(first) == numeric->GetValueAs<double>(second)
+                               ? 0.0
+                               : 1.0;
+            });
+    auto run = [&](config::ThreadNumType threads) {
+        config::CustomMetricsType metrics(5, custom);
+        auto params = MakeParams(kIris, 1.0, 0.5, 20, 2, metrics);
+        params[kThreads] = threads;
+        auto algo = algos::CreateAndLoadAlgorithm<GaRfd>(params);
+        algo->Execute();
+        return SortedRfdStrings(algo->GetRfds());
+    };
+    EXPECT_EQ(run(4), run(1));
 }
 
 }  // namespace tests

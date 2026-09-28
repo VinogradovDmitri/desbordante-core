@@ -25,6 +25,14 @@ public:
 
     virtual double Dist(model::Type const* type, std::byte const* first,
                         std::byte const* second) const = 0;
+
+    // True if Dist may be called concurrently from worker threads that do not
+    // hold the Python GIL. Pure C++ metrics return true; Python-backed metrics
+    // must return false so callers stay single-threaded for them. Fail-safe
+    // default: unknown metrics run single-threaded (correct, possibly slower).
+    virtual bool IsThreadSafe() const {
+        return false;
+    }
 };
 
 /// @brief Provides a convenient way to define custom metric, when column type is known in advance
@@ -51,6 +59,11 @@ public:
                 std::byte const* second) const override {
         return metric_(GetValue(first), GetValue(second));
     }
+
+    // Wraps a user C++ callable: thread safety is the callable's responsibility.
+    bool IsThreadSafe() const override {
+        return true;
+    }
 };
 
 /// @brief A custom metric, which uses real column type
@@ -66,6 +79,11 @@ public:
     double Dist(model::Type const* type, std::byte const* first,
                 std::byte const* second) const override {
         return metric_(type, first, second);
+    }
+
+    // Wraps a user C++ callable: thread safety is the callable's responsibility.
+    bool IsThreadSafe() const override {
+        return true;
     }
 };
 
@@ -91,6 +109,10 @@ public:
             return 0;
         }
         return ConvertType(type)->Dist(first, second);
+    }
+
+    bool IsThreadSafe() const override {
+        return true;
     }
 };
 }  // namespace util
