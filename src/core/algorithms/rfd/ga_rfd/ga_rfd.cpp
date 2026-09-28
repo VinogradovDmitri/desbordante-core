@@ -94,7 +94,7 @@ void GaRfd::MakeExecuteOptsAvailable() {
     using namespace config::names;
     MakeOptionsAvailable({kRfdMinSimilarity, kRfdMinimumConfidence, kPopulationSize,
                           kRfdMaxGenerations, kRfdCrossoverProbability, kRfdMutationProbability,
-                          kSeed, kMetrics, kCacheMaxSize, kThreads});
+                          kSeed, kRngEngine, kMetrics, kCacheMaxSize, kThreads});
 }
 
 void GaRfd::RegisterOptions() {
@@ -174,6 +174,7 @@ void GaRfd::RegisterOptions() {
                     .SetValueCheck(check_probability_range(kRfdMutationProbability)));
     RegisterOption(
             Option{&seed_, kSeed, kDSeed, static_cast<std::uint32_t>(std::random_device{}())});
+    RegisterOption(Option{&rng_engine_, kRngEngine, kDRngEngine, RngEngine::kMt19937});
     RegisterOption(Option{&cache_max_size_, kCacheMaxSize, kDCacheMaxSize,
                           static_cast<std::size_t>(10000)});
     RegisterOption(config::kThreadNumberOpt(&threads_));
@@ -425,7 +426,7 @@ double GaRfd::Fitness(double confidence) const noexcept {
 }
 
 std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::InitializePopulation(
-        std::mt19937& random_generator) const {
+        Rng& random_generator) const {
     std::unordered_set<Individual, IndividualHash> population;
     population.reserve(max_population_size_);
 
@@ -467,7 +468,7 @@ std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::InitializePo
 
 std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Select(
         std::unordered_set<Individual, IndividualHash> const& population,
-        std::mt19937& random_generator) const {
+        Rng& random_generator) const {
     std::unordered_set<Individual, IndividualHash> selected;
     selected.reserve(population.size());
 
@@ -496,7 +497,7 @@ std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Select(
 
 std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Crossover(
         std::unordered_set<Individual, IndividualHash> const& selected,
-        std::mt19937& random_generator) const {
+        Rng& random_generator) const {
     std::unordered_set<Individual, IndividualHash> offspring;
     std::size_t const selected_size = selected.size();
     if (selected_size < 2) return offspring;
@@ -547,7 +548,7 @@ std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Crossover(
 
 std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Mutate(
         std::unordered_set<Individual, IndividualHash> const& population,
-        std::mt19937& random_generator) const {
+        Rng& random_generator) const {
     std::unordered_set<Individual, IndividualHash> mutated;
     mutated.reserve(population.size());
 
@@ -649,7 +650,7 @@ void GaRfd::ExecuteInternal() {
     PoolHolder pool_holder = threads_ > 1 ? PoolHolder{threads_} : PoolHolder{};
     pool_ = pool_holder.GetPtr();
     BuildMatchBitsets();
-    std::mt19937 random_generator(seed_);
+    Rng random_generator(rng_engine_, seed_);
     auto population = InitializePopulation(random_generator);
     EvaluatePopulation(population);
     for (std::size_t generation = 0; generation < max_generations_; ++generation) {

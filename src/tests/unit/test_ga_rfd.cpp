@@ -291,6 +291,37 @@ TEST(GARfdOperators, ZeroCrossoverAndMutation) {
     ExpectValidRfds(rfds, 0.8);
 }
 
+TEST(GARfdRng, AllEnginesReproducibleWithSameSeed) {
+    for (auto engine : {RngEngine::kMt19937, RngEngine::kPcg32, RngEngine::kXoshiro256,
+                        RngEngine::kMinstdRand}) {
+        auto metrics = EqualityMetrics(5);
+        auto params1 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+        auto params2 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
+        params1[kRngEngine] = engine;
+        params2[kRngEngine] = engine;
+
+        auto algo1 = algos::CreateAndLoadAlgorithm<GaRfd>(params1);
+        auto algo2 = algos::CreateAndLoadAlgorithm<GaRfd>(params2);
+        algo1->Execute();
+        algo2->Execute();
+
+        EXPECT_EQ(SortedRfdStrings(algo1->GetRfds()), SortedRfdStrings(algo2->GetRfds()))
+                << "Engine must be reproducible with a fixed seed";
+    }
+}
+
+TEST(GARfdRng, DifferentEnginesFindValidRfds) {
+    for (auto engine : {RngEngine::kMt19937, RngEngine::kPcg32, RngEngine::kXoshiro256,
+                        RngEngine::kMinstdRand}) {
+        auto metrics = EqualityMetrics(5);
+        auto params = MakeParams(kIris, 0.0, 0.5, 30, 3, metrics);
+        params[kRngEngine] = engine;
+        auto algo = algos::CreateAndLoadAlgorithm<GaRfd>(params);
+        algo->Execute();
+        ExpectValidRfds(algo->GetRfds(), 0.5);
+    }
+}
+
 TEST(GARfdThreads, ThreadsOptionRunsAndReproduces) {
     auto metrics = EqualityMetrics(5);
     auto params1 = MakeParams(kIris, 0.0, 0.5, 20, 2, metrics);
