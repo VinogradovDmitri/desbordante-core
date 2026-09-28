@@ -33,6 +33,11 @@ public:
     virtual bool IsThreadSafe() const {
         return false;
     }
+
+    // True for absolute-difference metrics (enables the decoded-column fast path).
+    virtual bool IsAbsoluteDifference() const {
+        return false;
+    }
 };
 
 /// @brief Provides a convenient way to define custom metric, when column type is known in advance

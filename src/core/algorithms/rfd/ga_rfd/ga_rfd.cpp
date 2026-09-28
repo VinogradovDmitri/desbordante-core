@@ -205,16 +205,63 @@ void GaRfd::LoadDataInternal() {
     }
 }
 
+void GaRfd::BuildAbsDiffBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                             std::size_t row_end,
+                                             model::INumericType const* numeric,
+                                             std::vector<bool> const& valid,
+                                             double max_distance) {
+    auto const& column = typed_relation_->GetColumnData()[attribute];
+    auto& bits = similar_pair_bits_[attribute];
+    // One virtual decode per value; the pair loop below is pure arithmetic.
+    std::vector<double> values(num_rows_, 0.0);
+    for (std::size_t row = 0; row < num_rows_; ++row) {
+        if (valid[row]) values[row] = numeric->GetValueAs<double>(column.GetValue(row));
+    }
+    for (std::size_t first_row = row_begin; first_row < row_end; ++first_row) {
+        if (!valid[first_row]) continue;
+        double const first_value = values[first_row];
+        double const abs_first = std::abs(first_value);
+        std::size_t const base = first_row * num_rows_ - first_row * (first_row + 1) / 2;
+        for (std::size_t second_row = first_row + 1; second_row < num_rows_;
+             second_row += 64) {
+            std::size_t const pair0 = base + second_row - first_row - 1;
+            std::size_t const block_end = std::min(second_row + 64, num_rows_);
+            uint64_t word = 0;
+            for (std::size_t k = 0; k < block_end - second_row; ++k) {
+                if (!valid[second_row + k]) continue;
+                double const second_value = values[second_row + k];
+                double const max_absolute = std::max(abs_first, std::abs(second_value));
+                double const distance = (max_absolute == 0.0)
+                                                ? 0.0
+                                                : std::abs(first_value - second_value) /
+                                                          max_absolute;
+                if (distance <= max_distance) word |= (uint64_t{1} << k);
+            }
+            if (word != 0) DepositBlock(bits, pair0, word);
+        }
+    }
+}
+
 void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                            std::size_t row_end,
                                            std::vector<bool> const& valid) {
     auto const& column = typed_relation_->GetColumnData()[attribute];
-    auto& bits = similar_pair_bits_[attribute];
     // Core uses distances internally; the user-facing threshold is a
     // similarity in [0, 1], so distance threshold is 1 - similarity
     double const max_distance = 1.0 - min_similarity_[attribute];
     auto const& metric = *metrics_[attribute];
     model::Type const& column_type = column.GetType();
+
+    // Decoded fast path for absolute difference on plain numeric columns.
+    model::TypeId const type_id = column_type.GetTypeId();
+    if (metric.IsAbsoluteDifference() &&
+        (type_id == model::TypeId::kInt || type_id == model::TypeId::kDouble)) {
+        auto const* numeric = static_cast<model::INumericType const*>(&column_type);
+        BuildAbsDiffBitsetRange(attribute, row_begin, row_end, numeric, valid, max_distance);
+        return;
+    }
+
+    auto& bits = similar_pair_bits_[attribute];
 
     for (std::size_t first_row = row_begin; first_row < row_end; ++first_row) {
         if (!valid[first_row]) continue;

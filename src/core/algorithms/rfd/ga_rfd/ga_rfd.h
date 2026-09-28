@@ -23,6 +23,7 @@
 #include "core/config/custom_metric/custom_metrics/type.h"
 #include "core/config/tabular_data/input_table_type.h"
 #include "core/config/thread_number/type.h"
+#include "core/model/types/numeric_type.h"
 #include "core/util/worker_thread_pool.h"
 #include "core/model/table/column_layout_typed_relation_data.h"
 
@@ -97,6 +98,10 @@ private:
     void BuildMatchBitsets();
     void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                std::size_t row_end, std::vector<bool> const& valid);
+    // Absolute difference on a pre-decoded numeric column (same formula, no per-pair dispatch).
+    void BuildAbsDiffBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                 std::size_t row_end, model::INumericType const* numeric,
+                                 std::vector<bool> const& valid, double max_distance);
     // True when every column metric may run on GIL-less worker threads.
     bool AllMetricsThreadSafe() const;
     std::size_t ComputeSupport(uint32_t attributes_mask);

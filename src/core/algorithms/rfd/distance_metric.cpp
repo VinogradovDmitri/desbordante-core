@@ -113,6 +113,10 @@ public:
     bool IsThreadSafe() const override {
         return true;
     }
+
+    bool IsAbsoluteDifference() const override {
+        return true;
+    }
 };
 
 class AbsoluteThresholdMetricImpl : public util::ICustomMetric {
