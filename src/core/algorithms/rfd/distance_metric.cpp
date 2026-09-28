@@ -49,6 +49,10 @@ public:
     bool IsThreadSafe() const override {
         return true;
     }
+
+    bool IsEquality() const override {
+        return true;
+    }
 };
 
 class LevenshteinMetricImpl : public util::ICustomMetric {

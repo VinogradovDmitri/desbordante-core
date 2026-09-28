@@ -9,12 +9,16 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <random>
 #include <ranges>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
+
+#include <boost/math/special_functions/relative_difference.hpp>
 
 #include "core/algorithms/rfd/distance_metric.h"
 #include "core/config/descriptions.h"
@@ -24,6 +28,7 @@
 #include "core/config/tabular_data/input_table/option.h"
 #include "core/config/thread_number/option.h"
 #include "core/model/index.h"
+#include "core/model/types/double_type.h"
 #include "core/util/custom_metric/custom_metric.h"
 #include "core/util/logger.h"
 #include "core/util/worker_thread_pool.h"
@@ -357,6 +362,75 @@ void GaRfd::BuildAbsThreshBitsetRange(std::size_t attribute, std::size_t row_beg
     }
 }
 
+void GaRfd::BuildEqBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                        std::size_t row_end, std::vector<bool> const& valid,
+                                        double max_distance) {
+    auto const& column = typed_relation_->GetColumnData()[attribute];
+    auto& bits = similar_pair_bits_[attribute];
+    model::Type const& column_type = column.GetType();
+    model::TypeId const type_id = column_type.GetTypeId();
+
+    // Decoded values for numerics (int64 natively: doubles would lose precision
+    // past 2^53); strings are interned to integer ids below.
+    std::vector<model::Int> ints;
+    std::vector<double> doubles(num_rows_, 0.0);
+    std::vector<uint32_t> ids(num_rows_, 0);
+    bool const is_int = (type_id == model::TypeId::kInt);
+    bool const is_double = (type_id == model::TypeId::kDouble);
+    if (is_int || is_double) {
+        auto const* num_type = static_cast<model::INumericType const*>(&column_type);
+        if (is_int) {
+            ints.assign(num_rows_, 0);
+            for (std::size_t row = 0; row < num_rows_; ++row) {
+                if (valid[row])
+                    ints[row] = num_type->GetValueAs<model::Int>(column.GetValue(row));
+            }
+        } else {
+            for (std::size_t row = 0; row < num_rows_; ++row) {
+                if (valid[row])
+                    doubles[row] = num_type->GetValueAs<double>(column.GetValue(row));
+            }
+        }
+    } else {
+        std::unordered_map<std::string, uint32_t> intern;
+        for (std::size_t row = 0; row < num_rows_; ++row) {
+            if (!valid[row]) continue;
+            auto [it, _] = intern.try_emplace(column_type.ValueToString(column.GetValue(row)),
+                                              static_cast<uint32_t>(intern.size()));
+            ids[row] = it->second;
+        }
+    }
+
+    for (std::size_t first_row = row_begin; first_row < row_end; ++first_row) {
+        if (!valid[first_row]) continue;
+        std::size_t const base = first_row * num_rows_ - first_row * (first_row + 1) / 2;
+        for (std::size_t second_row = first_row + 1; second_row < num_rows_;
+             second_row += 64) {
+            std::size_t const pair0 = base + second_row - first_row - 1;
+            std::size_t const block_end = std::min(second_row + 64, num_rows_);
+            uint64_t word = 0;
+            for (std::size_t k = 0; k < block_end - second_row; ++k) {
+                if (!valid[second_row + k]) continue;
+                bool equal = false;
+                if (is_int) {
+                    equal = ints[first_row] == ints[second_row + k];
+                } else if (is_double) {
+                    // Same epsilon predicate as DoubleType::Compare.
+                    equal = boost::math::relative_difference(doubles[first_row],
+                                                             doubles[second_row + k]) <
+                            model::DoubleType::kDefaultEpsCount *
+                                    std::numeric_limits<model::Double>::epsilon();
+                } else {
+                    equal = ids[first_row] == ids[second_row + k];
+                }
+                double const distance = equal ? 0.0 : 1.0;
+                if (distance <= max_distance) word |= (uint64_t{1} << k);
+            }
+            if (word != 0) DepositBlock(bits, pair0, word);
+        }
+    }
+}
+
 void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                            std::size_t row_end,
                                            std::vector<bool> const& valid) {
@@ -369,8 +443,9 @@ void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
 
     // Decoded fast path for absolute difference on plain numeric columns.
     model::TypeId const type_id = column_type.GetTypeId();
-    if (metric.IsAbsoluteDifference() &&
-        (type_id == model::TypeId::kInt || type_id == model::TypeId::kDouble)) {
+    bool const plain_numeric =
+            type_id == model::TypeId::kInt || type_id == model::TypeId::kDouble;
+    if (metric.IsAbsoluteDifference() && plain_numeric) {
         auto const* numeric = static_cast<model::INumericType const*>(&column_type);
         BuildAbsDiffBitsetRange(attribute, row_begin, row_end, numeric, valid, max_distance);
         return;
@@ -382,11 +457,18 @@ void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
         return;
     }
     // Decoded fast path for absolute threshold on plain numeric columns.
-    if (metric.IsAbsoluteThreshold() &&
-        (type_id == model::TypeId::kInt || type_id == model::TypeId::kDouble)) {
+    if (metric.IsAbsoluteThreshold() && plain_numeric) {
         auto const* numeric = static_cast<model::INumericType const*>(&column_type);
         BuildAbsThreshBitsetRange(attribute, row_begin, row_end, numeric,
                                    metric.ThresholdTolerance(), valid, max_distance);
+        return;
+    }
+    // Exact equality via decoded values / interned ids (non-mixed int, double
+    // and string columns only: mixed-type pairs and exotic types keep the
+    // generic path with its own dissimilarity rules).
+    if (metric.IsEquality() &&
+        (plain_numeric || type_id == model::TypeId::kString)) {
+        BuildEqBitsetRange(attribute, row_begin, row_end, valid, max_distance);
         return;
     }
 

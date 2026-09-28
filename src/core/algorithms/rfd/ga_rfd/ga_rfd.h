@@ -111,6 +111,10 @@ private:
                                    std::size_t row_end, model::INumericType const* numeric,
                                    double tolerance, std::vector<bool> const& valid,
                                    double max_distance);
+    // Exact equality via decoded values / interned ids (same predicate, no per-pair dispatch).
+    void BuildEqBitsetRange(std::size_t attribute, std::size_t row_begin,
+                            std::size_t row_end, std::vector<bool> const& valid,
+                            double max_distance);
     // True when every column metric may run on GIL-less worker threads.
     bool AllMetricsThreadSafe() const;
     std::size_t ComputeSupport(uint32_t attributes_mask);
