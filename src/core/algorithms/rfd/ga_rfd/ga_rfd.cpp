@@ -324,6 +324,39 @@ void GaRfd::BuildLevBitsetRange(std::size_t attribute, std::size_t row_begin,
     }
 }
 
+void GaRfd::BuildAbsThreshBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                               std::size_t row_end,
+                                               model::INumericType const* numeric, double tolerance,
+                                               std::vector<bool> const& valid,
+                                               double max_distance) {
+    auto const& column = typed_relation_->GetColumnData()[attribute];
+    auto& bits = similar_pair_bits_[attribute];
+    // One virtual decode per value; the pair loop below is pure arithmetic.
+    std::vector<double> values(num_rows_, 0.0);
+    for (std::size_t row = 0; row < num_rows_; ++row) {
+        if (valid[row]) values[row] = numeric->GetValueAs<double>(column.GetValue(row));
+    }
+    for (std::size_t first_row = row_begin; first_row < row_end; ++first_row) {
+        if (!valid[first_row]) continue;
+        double const first_value = values[first_row];
+        std::size_t const base = first_row * num_rows_ - first_row * (first_row + 1) / 2;
+        for (std::size_t second_row = first_row + 1; second_row < num_rows_;
+             second_row += 64) {
+            std::size_t const pair0 = base + second_row - first_row - 1;
+            std::size_t const block_end = std::min(second_row + 64, num_rows_);
+            uint64_t word = 0;
+            for (std::size_t k = 0; k < block_end - second_row; ++k) {
+                if (!valid[second_row + k]) continue;
+                double const distance =
+                        (std::abs(first_value - values[second_row + k]) <= tolerance) ? 0.0
+                                                                                       : 1.0;
+                if (distance <= max_distance) word |= (uint64_t{1} << k);
+            }
+            if (word != 0) DepositBlock(bits, pair0, word);
+        }
+    }
+}
+
 void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
                                            std::size_t row_end,
                                            std::vector<bool> const& valid) {
@@ -346,6 +379,14 @@ void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
     // Materialized fast path for Levenshtein on plain columns.
     if (metric.IsLevenshtein()) {
         BuildLevBitsetRange(attribute, row_begin, row_end, valid, max_distance);
+        return;
+    }
+    // Decoded fast path for absolute threshold on plain numeric columns.
+    if (metric.IsAbsoluteThreshold() &&
+        (type_id == model::TypeId::kInt || type_id == model::TypeId::kDouble)) {
+        auto const* numeric = static_cast<model::INumericType const*>(&column_type);
+        BuildAbsThreshBitsetRange(attribute, row_begin, row_end, numeric,
+                                   metric.ThresholdTolerance(), valid, max_distance);
         return;
     }
 

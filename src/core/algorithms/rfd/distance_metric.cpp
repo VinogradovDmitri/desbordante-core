@@ -134,6 +134,14 @@ public:
         return true;
     }
 
+    bool IsAbsoluteThreshold() const override {
+        return true;
+    }
+
+    double ThresholdTolerance() const override {
+        return tolerance_;
+    }
+
 private:
     double tolerance_;
 };

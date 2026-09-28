@@ -106,6 +106,11 @@ private:
     void BuildLevBitsetRange(std::size_t attribute, std::size_t row_begin,
                              std::size_t row_end, std::vector<bool> const& valid,
                              double max_distance);
+    // Absolute threshold on a pre-decoded numeric column (same formula, no per-pair dispatch).
+    void BuildAbsThreshBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                   std::size_t row_end, model::INumericType const* numeric,
+                                   double tolerance, std::vector<bool> const& valid,
+                                   double max_distance);
     // True when every column metric may run on GIL-less worker threads.
     bool AllMetricsThreadSafe() const;
     std::size_t ComputeSupport(uint32_t attributes_mask);

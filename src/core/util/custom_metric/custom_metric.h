@@ -43,6 +43,16 @@ public:
     virtual bool IsLevenshtein() const {
         return false;
     }
+
+    // True for absolute-threshold metrics (enables the decoded-column fast path).
+    virtual bool IsAbsoluteThreshold() const {
+        return false;
+    }
+
+    // Tolerance for absolute-threshold metrics; 0.0 otherwise.
+    virtual double ThresholdTolerance() const {
+        return 0.0;
+    }
 };
 
 /// @brief Provides a convenient way to define custom metric, when column type is known in advance
