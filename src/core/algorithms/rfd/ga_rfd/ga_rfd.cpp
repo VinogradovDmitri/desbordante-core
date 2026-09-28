@@ -1,6 +1,7 @@
 #include "ga_rfd.h"
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <bitset>
 #include <cassert>
@@ -9,6 +10,7 @@
 #include <cstring>
 #include <iterator>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <ranges>
 #include <string>
@@ -20,8 +22,11 @@
 #include "core/config/names.h"
 #include "core/config/option_using.h"
 #include "core/config/tabular_data/input_table/option.h"
+#include "core/config/thread_number/option.h"
+#include "core/model/index.h"
 #include "core/util/custom_metric/custom_metric.h"
 #include "core/util/logger.h"
+#include "core/util/worker_thread_pool.h"
 
 namespace {
 
@@ -43,6 +48,38 @@ inline bool IsBitSet(uint32_t lhs_mask, std::size_t bit_idx) noexcept {
     return (lhs_mask & (1u << bit_idx)) != 0;
 }
 
+// Encapsulates "if using more than one thread, create a thread pool, otherwise pass nullptr to
+// indicate single-threaded execution" (same pattern as other algorithms).
+struct PoolHolder {
+private:
+    std::optional<::util::WorkerThreadPool> pool_holder_;
+    ::util::WorkerThreadPool* pool_ptr_;
+
+public:
+    PoolHolder() : pool_holder_(), pool_ptr_(nullptr) {}
+
+    PoolHolder(config::ThreadNumType threads)
+        : pool_holder_(threads), pool_ptr_(&*pool_holder_) {}
+
+    ::util::WorkerThreadPool* GetPtr() noexcept {
+        return pool_ptr_;
+    }
+};
+
+// Merges one 64-pair block; atomic for words shared at chunk boundaries.
+inline void DepositBlock(std::vector<uint64_t>& bits, std::size_t pair0, uint64_t word) {
+    unsigned const r = static_cast<unsigned>(pair0 & 63);
+    std::size_t const w0 = pair0 >> 6;
+    if (r == 0) {
+        std::atomic_ref<uint64_t>(bits[w0]).fetch_or(word, std::memory_order::relaxed);
+    } else {
+        std::atomic_ref<uint64_t>(bits[w0]).fetch_or(word << r, std::memory_order::relaxed);
+        if (w0 + 1 < bits.size())
+            std::atomic_ref<uint64_t>(bits[w0 + 1])
+                    .fetch_or(word >> (64 - r), std::memory_order::relaxed);
+    }
+}
+
 }  // namespace
 
 namespace algos::rfd {
@@ -57,7 +94,7 @@ void GaRfd::MakeExecuteOptsAvailable() {
     using namespace config::names;
     MakeOptionsAvailable({kRfdMinSimilarity, kRfdMinimumConfidence, kPopulationSize,
                           kRfdMaxGenerations, kRfdCrossoverProbability, kRfdMutationProbability,
-                          kSeed, kMetrics, kCacheMaxSize});
+                          kSeed, kMetrics, kCacheMaxSize, kThreads});
 }
 
 void GaRfd::RegisterOptions() {
@@ -139,6 +176,7 @@ void GaRfd::RegisterOptions() {
             Option{&seed_, kSeed, kDSeed, static_cast<std::uint32_t>(std::random_device{}())});
     RegisterOption(Option{&cache_max_size_, kCacheMaxSize, kDCacheMaxSize,
                           static_cast<std::size_t>(10000)});
+    RegisterOption(config::kThreadNumberOpt(&threads_));
 }
 
 void GaRfd::LoadDataInternal() {
@@ -166,51 +204,88 @@ void GaRfd::LoadDataInternal() {
     }
 }
 
+void GaRfd::BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
+                                           std::size_t row_end,
+                                           std::vector<bool> const& valid) {
+    auto const& column = typed_relation_->GetColumnData()[attribute];
+    auto& bits = similar_pair_bits_[attribute];
+    // Core uses distances internally; the user-facing threshold is a
+    // similarity in [0, 1], so distance threshold is 1 - similarity
+    double const max_distance = 1.0 - min_similarity_[attribute];
+    auto const& metric = *metrics_[attribute];
+    model::Type const& column_type = column.GetType();
+
+    for (std::size_t first_row = row_begin; first_row < row_end; ++first_row) {
+        if (!valid[first_row]) continue;
+        std::byte const* first_value = column.GetValue(first_row);
+        // Triangular pair number of (first_row, first_row + 1).
+        std::size_t const base =
+                first_row * num_rows_ - first_row * (first_row + 1) / 2;
+        for (std::size_t second_row = first_row + 1; second_row < num_rows_;
+             second_row += 64) {
+            std::size_t const pair0 = base + second_row - first_row - 1;
+            std::size_t const block_end = std::min(second_row + 64, num_rows_);
+            uint64_t word = 0;
+            for (std::size_t k = 0; k < block_end - second_row; ++k) {
+                // NULLs and empty values never count as matching
+                bool const match =
+                        valid[second_row + k] &&
+                        metric.Dist(&column_type, first_value,
+                                    column.GetValue(second_row + k)) <= max_distance;
+                if (match) word |= (uint64_t{1} << k);
+            }
+            if (word != 0) DepositBlock(bits, pair0, word);
+        }
+    }
+}
+
 void GaRfd::BuildMatchBitsets() {
     support_cache_ = std::make_unique<util::LRUCache<uint32_t, std::size_t>>(cache_max_size_);
 
     std::size_t const num_words_per_attribute = (total_pairs_ + 63) / 64;
     similar_pair_bits_.clear();
     similar_pair_bits_.reserve(num_attributes_);
+    for (std::size_t attribute = 0; attribute < num_attributes_; ++attribute) {
+        similar_pair_bits_.emplace_back(num_words_per_attribute, 0);
+    }
 
     auto const& column_data = typed_relation_->GetColumnData();
-    for (std::size_t attribute = 0; attribute < num_attributes_; ++attribute) {
-        auto const& column = column_data[attribute];
-        std::vector<uint64_t> bits(num_words_per_attribute, 0);
-        // Core uses distances internally; the user-facing threshold is a
-        // similarity in [0, 1], so distance threshold is 1 - similarity
-        double const max_distance = 1.0 - min_similarity_[attribute];
-        auto const& metric = *metrics_[attribute];
-        model::Type const& column_type = column.GetType();
-
+    if (pool_ == nullptr) {
         // NULLs and empty values never count as matching
         std::vector<bool> valid(num_rows_);
-        for (std::size_t row = 0; row < num_rows_; ++row) {
-            valid[row] = !column.IsNullOrEmpty(row);
-        }
-
-        uint64_t word_mask = 1;
-        std::size_t word_index = 0;
-
-        for (std::size_t first_row = 0; first_row < num_rows_; ++first_row) {
-            std::byte const* first_value = valid[first_row] ? column.GetValue(first_row) : nullptr;
-            for (std::size_t second_row = first_row + 1; second_row < num_rows_; ++second_row) {
-                bool match = first_value != nullptr && valid[second_row] &&
-                             metric.Dist(&column_type, first_value, column.GetValue(second_row)) <=
-                                     max_distance;
-                if (match) {
-                    bits[word_index] |= word_mask;
-                }
-                word_mask <<= 1;
-                if (word_mask == 0) {
-                    word_mask = 1;
-                    ++word_index;
-                }
+        for (std::size_t attribute = 0; attribute < num_attributes_; ++attribute) {
+            auto const& column = column_data[attribute];
+            for (std::size_t row = 0; row < num_rows_; ++row) {
+                valid[row] = !column.IsNullOrEmpty(row);
             }
+            BuildMatchBitsetRange(attribute, 0, num_rows_, valid);
+            LOG_INFO("Finished attribute {} match bitset", attribute);
         }
-        similar_pair_bits_.push_back(std::move(bits));
-        LOG_INFO("Finished attribute {} match bitset", attribute);
+        LOG_INFO("Match bitsets built for {} attributes", num_attributes_);
+        return;
     }
+    std::size_t const num_threads = threads_;
+    // Row chunks keep all threads busy when attributes are few.
+    std::size_t const chunks = std::max<std::size_t>(1, std::min(num_threads, num_rows_));
+    std::size_t const chunk_size = (num_rows_ + chunks - 1) / chunks;
+    std::size_t const total_tasks = num_attributes_ * chunks;
+    assert(pool_ != nullptr);
+    auto& pool = *pool_;
+    pool.ExecIndex(
+            [this, chunks, chunk_size](model::Index t) {
+                std::size_t const attribute = static_cast<std::size_t>(t) / chunks;
+                std::size_t const chunk = static_cast<std::size_t>(t) % chunks;
+                std::size_t const row_begin = chunk * chunk_size;
+                std::size_t const row_end = std::min(row_begin + chunk_size, num_rows_);
+                auto const& column = typed_relation_->GetColumnData()[attribute];
+                // NULLs and empty values never count as matching
+                std::vector<bool> local_valid(num_rows_);
+                for (std::size_t row = 0; row < num_rows_; ++row) {
+                    local_valid[row] = !column.IsNullOrEmpty(row);
+                }
+                BuildMatchBitsetRange(attribute, row_begin, row_end, local_valid);
+            },
+            static_cast<model::Index>(total_tasks));
     LOG_INFO("Match bitsets built for {} attributes", num_attributes_);
 }
 
@@ -244,25 +319,66 @@ std::size_t GaRfd::ComputeSupport(uint32_t attributes_mask) {
         return support;
     }
 
-    compute_buffer_ = first_bits;
+    if (compute_buffer_.size() != first_bits.size()) compute_buffer_.resize(first_bits.size());
 
     remaining_mask &= remaining_mask - 1;
+    // Parallel AND-reduce when the vector is big enough to amortize dispatch.
+    constexpr std::size_t kMinParallelWords = 65536;
+    bool const parallel_reduce =
+            pool_ != nullptr && compute_buffer_.size() >= kMinParallelWords;
+    std::size_t const num_jobs = parallel_reduce ? static_cast<std::size_t>(threads_) : 1;
+    std::vector<std::size_t> partial(num_jobs, 0);
+    std::size_t support = 0;
+    bool first_step = true;
     while (remaining_mask != 0) {
         int attribute = FirstSetBitIndex(remaining_mask);
         auto const& other_bits = similar_pair_bits_[attribute];
         std::size_t running_support = 0;
-        for (std::size_t word = 0; word < compute_buffer_.size(); ++word) {
-            compute_buffer_[word] &= other_bits[word];
-            running_support += std::popcount(compute_buffer_[word]);
+        if (parallel_reduce) {
+            std::size_t const chunk = (compute_buffer_.size() + num_jobs - 1) / num_jobs;
+            bool const copy = first_step;
+            pool_->ExecIndex(
+                    [this, &first_bits, &other_bits, &partial, chunk, copy](model::Index j) {
+                        std::size_t const begin = static_cast<std::size_t>(j) * chunk;
+                        std::size_t const end =
+                                std::min(begin + chunk, compute_buffer_.size());
+                        std::size_t local = 0;
+                        if (copy) {
+                            for (std::size_t word = begin; word < end; ++word) {
+                                uint64_t const v = first_bits[word] & other_bits[word];
+                                compute_buffer_[word] = v;
+                                local += std::popcount(v);
+                            }
+                        } else {
+                            for (std::size_t word = begin; word < end; ++word) {
+                                compute_buffer_[word] &= other_bits[word];
+                                local += std::popcount(compute_buffer_[word]);
+                            }
+                        }
+                        partial[static_cast<std::size_t>(j)] = local;
+                    },
+                    static_cast<model::Index>(num_jobs));
+            for (std::size_t s : partial) running_support += s;
+        } else if (first_step) {
+            for (std::size_t word = 0; word < compute_buffer_.size(); ++word) {
+                uint64_t const v = first_bits[word] & other_bits[word];
+                compute_buffer_[word] = v;
+                running_support += std::popcount(v);
+            }
+        } else {
+            for (std::size_t word = 0; word < compute_buffer_.size(); ++word) {
+                compute_buffer_[word] &= other_bits[word];
+                running_support += std::popcount(compute_buffer_[word]);
+            }
         }
+        first_step = false;
         if (running_support == 0) [[unlikely]] {
             support_cache_->Put(attributes_mask, 0);
             return 0;
         }
+        support = running_support;
         remaining_mask &= remaining_mask - 1;
     }
-
-    std::size_t const support = PopcountAll(compute_buffer_);
 
     support_cache_->Put(attributes_mask, support);
     LOG_DEBUG("Support for mask {} = {}", BitRepresentation(attributes_mask, num_attributes_),
@@ -529,6 +645,9 @@ std::vector<RFD> GaRfd::Finalize(
 
 void GaRfd::ExecuteInternal() {
     LOG_INFO("Build match bitsets...");
+    // Pool lives for the whole execution (build and parallel support reduces).
+    PoolHolder pool_holder = threads_ > 1 ? PoolHolder{threads_} : PoolHolder{};
+    pool_ = pool_holder.GetPtr();
     BuildMatchBitsets();
     std::mt19937 random_generator(seed_);
     auto population = InitializePopulation(random_generator);
@@ -562,6 +681,7 @@ void GaRfd::ExecuteInternal() {
         }
     }
     discovered_ = Finalize(population);
+    pool_ = nullptr;
 }
 
 void GaRfd::ResetState() {

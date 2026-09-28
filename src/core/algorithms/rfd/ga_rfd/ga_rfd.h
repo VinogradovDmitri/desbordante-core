@@ -20,6 +20,8 @@
 #include "core/algorithms/rfd/rfd.h"
 #include "core/config/custom_metric/custom_metrics/type.h"
 #include "core/config/tabular_data/input_table_type.h"
+#include "core/config/thread_number/type.h"
+#include "core/util/worker_thread_pool.h"
 #include "core/model/table/column_layout_typed_relation_data.h"
 
 namespace algos::rfd {
@@ -62,8 +64,13 @@ private:
     // separate bin column on chunk of 64 bit
     std::vector<std::vector<uint64_t>> similar_pair_bits_;
 
+    // Execution-scoped worker pool (nullptr = single-threaded); set in
+    // ExecuteInternal, cleared afterwards. Never dereference when null.
+    ::util::WorkerThreadPool* pool_ = nullptr;
+
     std::size_t cache_max_size_ = 10000;
     std::unique_ptr<util::LRUCache<uint32_t, std::size_t>> support_cache_;
+    config::ThreadNumType threads_ = 0;  // 0 = auto (hardware concurrency)
 
     // Parameters
     std::vector<double> min_similarity_;  // similarity thresholds per attribute in [0, 1]
@@ -85,6 +92,8 @@ private:
 
     // helper methods
     void BuildMatchBitsets();
+    void BuildMatchBitsetRange(std::size_t attribute, std::size_t row_begin,
+                               std::size_t row_end, std::vector<bool> const& valid);
     std::size_t ComputeSupport(uint32_t attributes_mask);
     // Computes conf and supp for a single individual
     Individual Evaluate(Individual const& individual);
