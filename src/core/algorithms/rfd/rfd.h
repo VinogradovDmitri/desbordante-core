@@ -1,7 +1,9 @@
 #pragma once
 
+#include <compare>
 #include <cstddef>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "core/config/tabular_data/input_table_type.h"

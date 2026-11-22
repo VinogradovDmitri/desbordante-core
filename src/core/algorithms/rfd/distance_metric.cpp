@@ -89,11 +89,17 @@ std::shared_ptr<util::ICustomMetric> AbsoluteDifferenceMetric() {
                 double const max_absolute =
                         std::max(std::abs(values->first), std::abs(values->second));
                 if (max_absolute == 0.0) return 0.0;
-                return absolute_difference / max_absolute;
+                double const ratio = absolute_difference / max_absolute;
+                return std::isfinite(ratio) ? std::min(ratio, kDissimilarDist) : kDissimilarDist;
             });
 }
 
 std::shared_ptr<util::ICustomMetric> AbsoluteThresholdMetricFactory(double tolerance) {
+    if (!std::isfinite(tolerance) || tolerance < 0.0) {
+        throw config::ConfigurationError(
+                "abs_threshold tolerance must be a finite non-negative number, got " +
+                std::to_string(tolerance));
+    }
     return std::make_shared<util::DynamicCustomMetric>(
             [tolerance](model::Type const* type, std::byte const* first, std::byte const* second) {
                 auto values = NumericValues(type, first, second, "abs_threshold");

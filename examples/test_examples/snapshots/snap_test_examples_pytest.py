@@ -576,8 +576,10 @@ between RFDs and exact/approximate FDs. To discover RFDs we employ GA-RFD
 algorithm and to validate AFDs we use the verifier that computes the g1 error.
 
   By the end you will understand the difference between the confidence reported
-by GA-RFD (based on tuple pairs) and the g1 error from the AFD verifier (based
-on tuple pairs), and how these two measures correspond.
+by GA-RFD (the fraction of LHS-agreeing pairs that also agree on the RHS) and
+the g1 error from the AFD verifier (the fraction of all pairs that violate the
+FD), and how these two measures correspond. GA-RFD itself optimizes confidence,
+not g1.
 
 
 ================================================================================
@@ -607,10 +609,12 @@ people. Each row represents one person with three numeric attributes:
 
 
 ================================================================================
-\x1b[1;36m3. Exact FD discovery (minconf=1.0, equality metrics)\x1b[0m
+\x1b[1;36m3. Exact FD discovery (minconf=1.0, min_similarity=1.0)\x1b[0m
 ================================================================================
 The GA-RFD algorithm can also mine classic exact functional dependencies. To do
-this, set minconf = 1.0 and use the default equality metric.
+this, set minconf = 1.0 and keep min_similarity = 1.0 (the default): with the
+default equality metric, this threshold makes only exactly equal values count as
+similar.
 
 First, let us look once more at the sample data, this time noting the duplicates
 in rows 1-2 and 5-6.
@@ -630,9 +634,8 @@ in rows 1-2 and 5-6.
 
 Now lets try to mine dependencies with these settings.
 
-\x1b[1;33mFound 2 exact FD(s) with minconf=1.0\x1b[0m
-\x1b[1;33m 1. [weight_kg] -> [height_cm]           (conf=1.000, supp=0.071)\x1b[0m
- 2. [weight_kg, shoe_size_eu] -> [height_cm]    (conf=1.000, supp=0.036)
+\x1b[1;33mFound 1 exact FD(s) with minconf=1.0\x1b[0m
+\x1b[1;33m 1. [weight_kg] -> [height_cm]    (conf=1.000, supp=0.071)\x1b[0m
 
 \x1b[1;33mWhy does [weight_kg] -> [height_cm] have conf=1.000 and supp=0.071?\x1b[0m
 
@@ -640,26 +643,25 @@ Now lets try to mine dependencies with these settings.
 same weight: (row 1, row 2) with weight 70, and (row 5, row 6) with weight 81.
 In both pairs the height is also equal (175 and 178 respectively). Hence, among
 the 2 pairs that agree on the left side, both agree on the right side =>
-confidence = 2/2 = 1.0. Support = 2/28 ≈ 0.071 because the whole dependency
-holds for exactly 2 pairs.
+confidence = 2/2 = 1.0. Support (LHS) = 2/28 ≈ 0.071 because exactly 2 pairs
+agree on weight_kg.
 
 
 ================================================================================
 \x1b[1;36m4. Approximate FD discovery: lowering minconf\x1b[0m
 ================================================================================
-  If we keep equality metrics but lower minconf below 1.0, the Relaxed
-Functional Dependency becomes an Approximate Functional Dependency with
-similarity metric g1. Setting minconf = 0.6 means we accept AFDs that hold in at
-least 60% of the cases. Thus, the GA-RFD algorithm can search for AFD pattern
-too.
+  If we keep this exact comparison but lower minconf below 1.0, the result is an
+approximate FD: under equality on every column, a rule holds on at least minconf
+of the pairs that agree on the LHS. Setting minconf = 0.6 means we accept rules
+that hold for at least 60% of the LHS-agreeing pairs. GA-RFD optimizes
+confidence, not g1; Section 5 compares those two measures independently.
 
 Let us try to check their presence in the same dataset.
 
-\x1b[1;33mFound 4 AFD(s) with minconf>=0.6\x1b[0m
- 1. [shoe_size_eu] -> [height_cm]               (conf=0.750, supp=0.143)
- 2. [weight_kg] -> [height_cm]                  (conf=1.000, supp=0.071)
- 3. [weight_kg, shoe_size_eu] -> [height_cm]    (conf=1.000, supp=0.036)
-\x1b[1;33m 4. [height_cm] -> [shoe_size_eu]        (conf=0.750, supp=0.143)\x1b[0m
+\x1b[1;33mFound 3 AFD(s) with minconf>=0.6\x1b[0m
+ 1. [shoe_size_eu] -> [height_cm]           (conf=0.750, supp=0.143)
+ 2. [weight_kg] -> [height_cm]              (conf=1.000, supp=0.071)
+\x1b[1;33m 3. [height_cm] -> [shoe_size_eu]    (conf=0.750, supp=0.143)\x1b[0m
 
 \x1b[1;33mWhy does [height_cm] -> [shoe_size_eu] have conf=0.750 and
 supp=0.143?\x1b[0m
@@ -683,46 +685,43 @@ AFD discovered by GA-RFD and compare the g1 error with the confidence value.
 
 \x1b[1;33mVerification results:\x1b[0m
 
-+------------------------------------------+--------+--------+------------+------------+
-|                   rule                   | conf   | supp   | g1 error   | 1 - conf   |
-|------------------------------------------+--------+--------+------------+------------|
-|        [weight_kg] -> [height_cm]        | 1      | 0.071  | 0          | 0          |
-| [weight_kg, shoe_size_eu] -> [height_cm] | 1      | 0.036  | 0          | 0          |
-|      [shoe_size_eu] -> [height_cm]       | 0.75   | 0.143  | 0.036      | 0.25       |
-|      [height_cm] -> [shoe_size_eu]       | 0.75   | 0.143  | 0.036      | 0.25       |
-+------------------------------------------+--------+--------+------------+------------+
++-------------------------------+--------+--------+------------+------------+
+|             rule              | conf   | supp   | g1 error   | 1 - conf   |
+|-------------------------------+--------+--------+------------+------------|
+|  [weight_kg] -> [height_cm]   | 1      | 0.071  | 0          | 0          |
+| [shoe_size_eu] -> [height_cm] | 0.75   | 0.143  | 0.036      | 0.25       |
+| [height_cm] -> [shoe_size_eu] | 0.75   | 0.143  | 0.036      | 0.25       |
++-------------------------------+--------+--------+------------+------------+
 
 \x1b[1;33mObservations\x1b[0m
 
   The table compares the confidence reported by GA-RFD with the g1 error from
-the verifier. Confidence is defined as the fraction of pairs with equal LHS that
-also have equal RHS. The g1 error, on the other hand, is the fraction of all
-possible pairs in the dataset that violate the rule (LHS equal, RHS different).
+the verifier. Confidence is conditional: it is computed over pairs that agree on
+the LHS. The g1 error is global: it counts every violating pair in the dataset
+and divides by all tuple pairs.
 
-  Because they are computed over different sets of pairs, 1 - Confidence and g1
-error generally do not match. For example, in our 8-row dataset there are 8*7/2
-= 28 total pairs. For the dependency [height_cm] => [shoe_size_eu] only 4 pairs
-agree on height. Among those, 3 also agree on shoe size, so confidence = 3/4 =
-0.75, and 1 - confidence = 0.25. However, the number of violating pairs is just
-1 (rows 5 and 6), which gives a g1 error of 1/28 ≈ 0.036 — exactly the value
-shown by the verifier.
+  The exact relationship is g1 = supp(X) * (1 - conf(X -> Y)) = (count_lhs -
+count_both) / total_pairs. Here, for [height_cm] -> [shoe_size_eu], 4 of 28
+pairs agree on height, and 3 of those also agree on shoe size. Thus confidence =
+3/4 = 0.75 and support = 4/28, so g1 = (4/28) * (1 - 0.75) = 1/28 ≈ 0.036 —
+exactly the value shown by the verifier. The measures differ because confidence
+ignores pairs that disagree on the LHS, while g1 counts all violating pairs.
 
-  This illustrates the important difference: g1 error gives a global, pair-based
-measure of how much the data deviates from a perfect FD, while confidence tells
-us how reliable the dependency is among the tuples that actually share the LHS
-values.
+  In short, confidence measures reliability among LHS-agreeing pairs, while g1
+measures global deviation from a perfect FD.
 
 
 ================================================================================
 \x1b[1;36mSummary\x1b[0m
 ================================================================================
   In this advanced example we:
-  * Mined exact FDs and approximate FDs using GA-RFD with equality metrics.
+  * Mined exact FDs and approximate FDs using GA-RFD with exact comparisons.
   * Verified the AFDs with the AFD verifier, computing the g1 error and
 comparing it to the confidence reported by the mining algorithm.
-  * Understood the difference: confidence is based on tuple pairs, g1 error is
-the fraction of violating tuple pairs. Both are useful, but the verifier gives a
-direct measure of data quality at the pair level.
+  * Understood the difference: confidence is conditional, computed over LHS-
+agreeing pairs only, while g1 is global, computed over all tuple pairs. Both are
+useful, but the verifier gives a direct measure of data quality at the pair
+level.
 
   When using RFDs for data cleaning, you can first mine approximate dependencies
 with GA-RFD, then pass them to the verifier to obtain exact pair-level error
@@ -3535,12 +3534,10 @@ X and Y, divided by the number of pairs that are similar on X. In other words,
 reliable the rule is. It returns 1 if and only if, whenever tuple pairs are
 similar on attributes in X, they are also similar on Y.
 
-  In this pattern, computing confidence and support is actually rather subtle:
-although they conform to the classic definition, the result will differ from the
-standard g1. The algorithm itself has some deep limitations that lead to this,
-and there are also several important considerations to keep in mind.These and
-the exact computation details will be explained in the advanced example:
-examples/advanced/fd_and_afd_via_ga_rfd.py.
+  Support and confidence here follow the classic definitions, but they are not
+the same as the g1 error used for approximate FDs: GA-RFD optimizes confidence,
+while g1 is a separate global error measure. The advanced example explains their
+exact relationship: examples/advanced/fd_and_afd_via_ga_rfd.py.
 
 
 ================================================================================
@@ -3598,14 +3595,17 @@ The main parameters you can set:
   seed                  - seed for reproducible results (default: random)
   cache_size            - maximum number of cached comparisons, the bigger 
                           the faster the algorithm will be (default 10000)
+  include_key_rfds      - report vacuous RFDs determined by minimal keys
+                          (support 0, confidence 1; default True)
 
 \x1b[1;32mNote:\x1b[0m the paper that introduced GA-RFD evaluates the probabilities
 0.85/0.3 for crossover/mutation; Desbordante defaults to 1.0/1.0. Tune them for
 your data.
 
-  The algorithm returns every candidate whose confidence is at least minconf,
-without pruning subsumed rules: a minimal cover is not computed. If you need a
-minimal cover, apply post-processing on the discovered RFDs.
+  The algorithm reports only rules with a minimal left-hand side: a rule is
+skipped when a proper subset of its LHS yields the same RHS with sufficient
+confidence. Vacuous rules whose LHS is a minimal key (support 0, confidence 1)
+are reported by default; pass \x1b[1minclude_key_rfds=False\x1b[0m to hide them.
 
   Because GA-RFD uses randomness, always set the \x1b[1mseed\x1b[0m if you need
 reproducible results.
@@ -3657,11 +3657,11 @@ within about \x1b[1m5%\x1b[0m to be similar. Therefore, we need to set
 example given in the references.
 
   Thus, a tuple pair (t1,t2) satisfies the antecedent of a dependency R (X->Y)
-if, for each attribute A IN X, abs_diff(t1[A], t2[A]) >= 0.95. If for each tuple
-pair satisfying the antecedent, abs_diff(t1[Y], t2[Y]) >= 0.95, then we say that
-this rule satisfies the succedent of R. If, in addition to the above, the
-minconf of R is greater than a user-specified threshold, then we say that R
-holds on this table.
+if, for each attribute A IN X, 1 - abs_diff(t1[A], t2[A]) >= 0.95 (equivalently,
+abs_diff(t1[A], t2[A]) <= 0.05). If for each tuple pair satisfying the
+antecedent, 1 - abs_diff(t1[Y], t2[Y]) >= 0.95, then we say that this rule
+satisfies the succedent of R. If, in addition to the above, the minconf of R is
+greater than a user-specified threshold, then we say that R holds on this table.
 
 +-----+-------------+-------------+----------------+
 |   # |   height_cm |   weight_kg |   shoe_size_eu |
@@ -3677,19 +3677,18 @@ holds on this table.
 
 Let's run the algorithm to discover suitable RFDs.
 
-\x1b[1;33mFound 4 RFDs with min_similarity=[0.95], minconf>=0.7\x1b[0m
- 1. [shoe_size_eu] -> [height_cm]               (conf=1.000, supp=0.714)
- 2. [weight_kg] -> [height_cm]                  (conf=1.000, supp=0.286)
- 3. [weight_kg, shoe_size_eu] -> [height_cm]    (conf=1.000, supp=0.143)
- 4. [height_cm] -> [shoe_size_eu]               (conf=0.750, supp=0.952)
+\x1b[1;33mFound 3 RFDs with min_similarity=[0.95], minconf>=0.7\x1b[0m
+ 1. [shoe_size_eu] -> [height_cm]    (conf=1.000, supp=0.714)
+ 2. [weight_kg] -> [height_cm]       (conf=1.000, supp=0.286)
+ 3. [height_cm] -> [shoe_size_eu]    (conf=0.750, supp=0.952)
 
-  The search finds 4 RFDs: the height column dominates because its pairs are the
-most similar under the relative 5% threshold. The natural rule
-\x1b[1;33m[height_cm, weight_kg] -> [shoe_size_eu]\x1b[0m is NOT among them: jointly
-similar (height, weight) pairs are rare, and only 3 of the 6 such pairs also
-have similar shoe sizes, so its confidence is \x1b[1;31m0.5\x1b[0m, below
-\x1b[1mminconf=0.7\x1b[0m. In the next section we will recover this rule using
-stricter absolute thresholds.
+  The search finds 3 RFDs (non-minimal left-hand sides are pruned): the height
+column dominates because its pairs are the most similar under the relative 5%
+threshold. The natural rule \x1b[1;33m[height_cm, weight_kg] -> [shoe_size_eu]\x1b[0m
+is NOT among them: jointly similar (height, weight) pairs are rare, and only 3
+of the 6 such pairs also have similar shoe sizes, so its confidence is
+\x1b[1;31m0.5\x1b[0m, below \x1b[1mminconf=0.7\x1b[0m. In the next section we will recover
+this rule using stricter absolute thresholds.
 
 
 ================================================================================
@@ -3705,6 +3704,11 @@ of practically the same height and roughly the same weight should have almost
 the same shoe size'\x1b[0m. Since the abs_threshold_metric returns 0 or 1, we set
 min_similarity=1.0 to accept only exact matches according to these thresholds.
 
+  If we keep minconf=0.5, the shorter rule [height_cm] -> [shoe_size_eu]
+(confidence 0.857) already satisfies the threshold, so the stronger composite
+rule is pruned as non-minimal. To expose the composite rule, we raise minconf to
+0.9: the shorter rule then falls below the threshold.
+
 +-----+-------------+-------------+----------------+
 |   # |   height_cm |   weight_kg |   shoe_size_eu |
 |-----+-------------+-------------+----------------|
@@ -3717,16 +3721,11 @@ min_similarity=1.0 to accept only exact matches according to these thresholds.
 |   7 |         170 |          62 |             39 |
 +-----+-------------+-------------+----------------+
 
-Let's rerun the algorithm with these parameters.
+Let's rerun the algorithm with minconf=0.9.
 
-\x1b[1;33mRFDs with absolute thresholds (minconf=0.5)\x1b[0m
- 1. [weight_kg, shoe_size_eu] -> [height_cm]           (conf=0.600, supp=0.476)
- 2. [height_cm] -> [shoe_size_eu]                      (conf=0.857, supp=0.333)
-\x1b[1;32m 3. [height_cm, weight_kg] -> [shoe_size_eu]    (conf=1.000, supp=0.286)\x1b[0m
- 4. [weight_kg] -> [shoe_size_eu]                      (conf=0.625, supp=0.762)
- 5. [height_cm] -> [weight_kg]                         (conf=0.857, supp=0.333)
- 6. [height_cm, shoe_size_eu] -> [weight_kg]           (conf=1.000, supp=0.286)
- 7. [shoe_size_eu] -> [weight_kg]                      (conf=0.769, supp=0.619)
+\x1b[1;33mRFDs with absolute thresholds (minconf=0.9)\x1b[0m
+\x1b[1;32m 1. [height_cm, weight_kg] -> [shoe_size_eu]    (conf=1.000, supp=0.286)\x1b[0m
+ 2. [height_cm, shoe_size_eu] -> [weight_kg]           (conf=1.000, supp=0.286)
 
   The key dependency \x1b[1;32m[height_cm, weight_kg] -> [shoe_size_eu]\x1b[0m has
 \x1b[1mconfidence=1.000\x1b[0m and \x1b[1msupport=0.286\x1b[0m. It tells us: among pairs
@@ -3782,38 +3781,37 @@ Let's first try to discover RFDs using exact string equality on all columns (no
 Jaccard used).
 
 \x1b[1;33mRFDs with exact equality on all columns\x1b[0m
- 1. [district] -> [cuisine]                (conf=0.471, supp=0.309)
- 2. [restaurant] -> [cuisine]              (conf=1.000, supp=0.000)
- 3. [restaurant, district] -> [cuisine]    (conf=1.000, supp=0.000)
- 4. [cuisine] -> [district]                (conf=1.000, supp=0.145)
- 5. [restaurant] -> [district]             (conf=1.000, supp=0.000)
- 6. [restaurant, cuisine] -> [district]    (conf=1.000, supp=0.000)
+ 1. [district] -> [cuisine]       (conf=0.471, supp=0.309)
+ 2. [restaurant] -> [cuisine]     (conf=1.000, supp=0.000)
+ 3. [cuisine] -> [district]       (conf=1.000, supp=0.145)
+ 4. [restaurant] -> [district]    (conf=1.000, supp=0.000)
 
   Without fuzzy matching, the only non-vacuous rules (support > 0) involve
 cuisine and district because they contain exact duplicates. Restaurant names are
-all unique, so no pair of rows is similar on restaurant: rules that mention
-restaurant appear only with zero support and trivially maximal confidence 1.0
-(an empty antecedent covers every pair vacuously), so they carry no information.
+all unique, so no pair of rows is similar on restaurant: every rule whose LHS
+contains restaurant has zero support. The minimal such LHS is the key
+{restaurant}, so among restaurant rules only [restaurant] -> [cuisine] and
+[restaurant] -> [district] are reported, with confidence 1.0. They are vacuously
+true because no pair satisfies the antecedent {restaurant}, and they are valid
+FDs because restaurant is a key. However, they tell us nothing about how cuisine
+depends on restaurant; pass include_key_rfds=False to hide them.
 
 Let's try again using fuzzy matching with Jaccard metric.
 
 \x1b[1;33mRFDs with Jaccard on restaurant (min_similarity=0.3)\x1b[0m
- 1. [district] -> [cuisine]                (conf=0.471, supp=0.309)
-\x1b[1;32m 2. [restaurant] -> [cuisine]       (conf=0.857, supp=0.127)\x1b[0m
- 3. [restaurant, district] -> [cuisine]    (conf=1.000, supp=0.109)
- 4. [cuisine] -> [district]                (conf=1.000, supp=0.145)
- 5. [restaurant] -> [district]             (conf=0.857, supp=0.127)
- 6. [restaurant, cuisine] -> [district]    (conf=1.000, supp=0.109)
- 7. [cuisine] -> [restaurant]              (conf=0.750, supp=0.145)
- 8. [cuisine, district] -> [restaurant]    (conf=0.750, supp=0.145)
- 9. [district] -> [restaurant]             (conf=0.353, supp=0.309)
+ 1. [district] -> [cuisine]             (conf=0.471, supp=0.309)
+\x1b[1;32m 2. [restaurant] -> [cuisine]    (conf=0.857, supp=0.127)\x1b[0m
+ 3. [cuisine] -> [district]             (conf=1.000, supp=0.145)
+ 4. [restaurant] -> [district]          (conf=0.857, supp=0.127)
+ 5. [cuisine] -> [restaurant]           (conf=0.750, supp=0.145)
+ 6. [district] -> [restaurant]          (conf=0.353, supp=0.309)
 
   Now the restaurant rules have real support! For instance, \x1b[1;32m[restaurant]
 -> [cuisine]\x1b[0m has support 0.127 and confidence 0.857: restaurants with
 similar names tend to serve the same cuisine, even when the names contain small
-typos. With exact equality this rule was an empty artifact (zero support);
-Jaccard on 2-grams absorbs spelling variations and gives the dependency real
-coverage.
+typos. With exact equality this rule was vacuous (restaurant is a key, so
+support is 0 and confidence is 1); Jaccard on 2-grams absorbs spelling
+variations and gives the dependency real coverage.
 
   Support is low because very few restaurant-name pairs reach the \x1b[1m0.3\x1b[0m
 Jaccard threshold, but confidence is well above random, indicating a real
@@ -3850,15 +3848,12 @@ working with the following RFD: \x1b[1m[cuisine] -> [district]\x1b[0m.
 \x1b[1;33mStep 1: First, let's mine RFDs on the dirty dataset\x1b[0m
 
 \x1b[1;33mRFDs found on the dirty dataset (minconf=0.01)\x1b[0m
- 1. [district] -> [cuisine]                (conf=0.385, supp=0.236)
- 2. [restaurant] -> [cuisine]              (conf=0.571, supp=0.127)
- 3. [restaurant, district] -> [cuisine]    (conf=0.750, supp=0.073)
-\x1b[1;31m 4. [cuisine] -> [district]         (conf=0.833, supp=0.109)\x1b[0m
- 5. [restaurant] -> [district]             (conf=0.571, supp=0.127)
- 6. [restaurant, cuisine] -> [district]    (conf=0.750, supp=0.073)
- 7. [cuisine] -> [restaurant]              (conf=0.667, supp=0.109)
- 8. [cuisine, district] -> [restaurant]    (conf=0.600, supp=0.091)
- 9. [district] -> [restaurant]             (conf=0.308, supp=0.236)
+ 1. [district] -> [cuisine]           (conf=0.385, supp=0.236)
+ 2. [restaurant] -> [cuisine]         (conf=0.571, supp=0.127)
+\x1b[1;31m 3. [cuisine] -> [district]    (conf=0.833, supp=0.109)\x1b[0m
+ 4. [restaurant] -> [district]        (conf=0.571, supp=0.127)
+ 5. [cuisine] -> [restaurant]         (conf=0.667, supp=0.109)
+ 6. [district] -> [restaurant]        (conf=0.308, supp=0.236)
 
   GA-RFD found the rule \x1b[1m[cuisine] -> [district]\x1b[0m with confidence
 \x1b[1;31m0.83\x1b[0m.
@@ -3914,15 +3909,12 @@ cleaned dataset printed in Step 4.
 +-----+-----------------+-----------+------------+
 
 \x1b[1;33mRFDs found on the cleaned dataset (minconf=0.01)\x1b[0m
- 1. [district] -> [cuisine]                (conf=0.500, supp=0.278)
- 2. [restaurant] -> [cuisine]              (conf=0.750, supp=0.111)
- 3. [restaurant, district] -> [cuisine]    (conf=1.000, supp=0.083)
-\x1b[1;32m 4. [cuisine] -> [district]         (conf=1.000, supp=0.139)\x1b[0m
- 5. [restaurant] -> [district]             (conf=0.750, supp=0.111)
- 6. [restaurant, cuisine] -> [district]    (conf=1.000, supp=0.083)
- 7. [cuisine] -> [restaurant]              (conf=0.600, supp=0.139)
- 8. [cuisine, district] -> [restaurant]    (conf=0.600, supp=0.139)
- 9. [district] -> [restaurant]             (conf=0.300, supp=0.278)
+ 1. [district] -> [cuisine]           (conf=0.500, supp=0.278)
+ 2. [restaurant] -> [cuisine]         (conf=0.750, supp=0.111)
+\x1b[1;32m 3. [cuisine] -> [district]    (conf=1.000, supp=0.139)\x1b[0m
+ 4. [restaurant] -> [district]        (conf=0.750, supp=0.111)
+ 5. [cuisine] -> [restaurant]         (conf=0.600, supp=0.139)
+ 6. [district] -> [restaurant]        (conf=0.300, supp=0.278)
 
   On the cleaned dataset, the rule \x1b[1m[cuisine] -> [district]\x1b[0m has
 confidence \x1b[1;32m1.00\x1b[0m.

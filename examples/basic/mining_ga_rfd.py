@@ -205,10 +205,10 @@ printlns(
 )
 
 printlns(
-    "  In this pattern, computing confidence and support is actually rather subtle: although they conform "
-    + "to the classic definition, the result will differ from the standard g1. The algorithm itself has "
-    + "some deep limitations that lead to this, and there are also several important considerations to "
-    + "keep in mind.These and the exact computation details will be explained in the advanced example: "
+    "  Support and confidence here follow the classic definitions, but they are "
+    + "not the same as the g1 error used for approximate FDs: GA-RFD optimizes "
+    + "confidence, while g1 is a separate global error measure. The advanced "
+    + "example explains their exact relationship: "
     + "examples/advanced/fd_and_afd_via_ga_rfd.py."
 )
 
@@ -269,15 +269,18 @@ print("""
   seed                  - seed for reproducible results (default: random)
   cache_size            - maximum number of cached comparisons, the bigger 
                           the faster the algorithm will be (default 10000)
+  include_key_rfds      - report vacuous RFDs determined by minimal keys
+                          (support 0, confidence 1; default True)
 """)
 printlns(
     f"{GREEN}Note:{RESET} the paper that introduced GA-RFD evaluates the probabilities 0.85/0.3 "
     + "for crossover/mutation; Desbordante defaults to 1.0/1.0. Tune them for your data."
 )
 printlns(
-    "  The algorithm returns every candidate whose confidence is at least minconf, "
-    + "without pruning subsumed rules: a minimal cover is not computed. "
-    + "If you need a minimal cover, apply post-processing on the discovered RFDs."
+    "  The algorithm reports only rules with a minimal left-hand side: a rule is "
+    + "skipped when a proper subset of its LHS yields the same RHS with sufficient "
+    + "confidence. Vacuous rules whose LHS is a minimal key (support 0, confidence 1) "
+    + f"are reported by default; pass {BOLD}include_key_rfds=False{RESET} to hide them."
 )
 printlns(
     f"  Because GA-RFD uses randomness, always set the {BOLD}seed{RESET} if you need "
@@ -347,10 +350,12 @@ printlns(
 
 printlns(
     "  Thus, a tuple pair (t1,t2) satisfies the antecedent of a dependency R (X->Y) "
-    + "if, for each attribute A IN X, abs_diff(t1[A], t2[A]) >= 0.95. If for each tuple "
-    + "pair satisfying the antecedent, abs_diff(t1[Y], t2[Y]) >= 0.95, then we say that this "
-    + "rule satisfies the succedent of R. If, in addition to the above, the minconf of R is greater "
-    + "than a user-specified threshold, then we say that R holds on this table."
+    + "if, for each attribute A IN X, 1 - abs_diff(t1[A], t2[A]) >= 0.95 "
+    + "(equivalently, abs_diff(t1[A], t2[A]) <= 0.05). If for each tuple "
+    + "pair satisfying the antecedent, 1 - abs_diff(t1[Y], t2[Y]) >= 0.95, "
+    + "then we say that this rule satisfies the succedent of R. If, in addition to the above, "
+    + "the minconf of R is greater than a user-specified threshold, then we say that R "
+    + "holds on this table."
 )
 
 print_table(df)
@@ -374,8 +379,9 @@ print_rfds_table(
 )
 
 printlns(
-    "  The search finds 4 RFDs: the height column dominates because its pairs are "
-    + "the most similar under the relative 5% threshold. The natural rule "
+    "  The search finds 3 RFDs (non-minimal left-hand sides are pruned): the height "
+    + "column dominates because its pairs are the most similar under the relative 5% "
+    + "threshold. The natural rule "
     + f"{YELLOW}[height_cm, weight_kg] -> [shoe_size_eu]{RESET} is NOT among them: "
     + "jointly similar (height, weight) pairs are rare, and only 3 of the 6 such pairs "
     + f"also have similar shoe sizes, so its confidence is {RED}0.5{RESET}, "
@@ -402,24 +408,31 @@ printlns(
     + "matches according to these thresholds."
 )
 
+printlns(
+    "  If we keep minconf=0.5, the shorter rule [height_cm] -> [shoe_size_eu] "
+    + "(confidence 0.857) already satisfies the threshold, so the stronger "
+    + "composite rule is pruned as non-minimal. To expose the composite rule, "
+    + "we raise minconf to 0.9: the shorter rule then falls below the threshold."
+)
+
 print_table(df)
 algo_abs = desbordante.rfd.algorithms.GaRfd()
 algo_abs.load_data(table=(DATA_PATH, ",", True))
 algo_abs.execute(
     metrics=[abs_thresh(1.0), abs_thresh(10.0), abs_thresh(1.0)],
     min_similarity=[1.0],
-    minconf=0.5,
+    minconf=0.9,
     max_generations=500,
     seed=42,
 )
 abs_rfds = algo_abs.get_rfds()
 
 highlight_key = make_rfd_key(["height_cm", "weight_kg"], "shoe_size_eu")
-printlns("Let's rerun the algorithm with these parameters.")
+printlns("Let's rerun the algorithm with minconf=0.9.")
 print_rfds_table(
     abs_rfds,
     COL_NAMES,
-    title="RFDs with absolute thresholds (minconf=0.5)",
+    title="RFDs with absolute thresholds (minconf=0.9)",
     highlight={highlight_key},
     color=GREEN,
 )
@@ -510,10 +523,14 @@ print_rfds_table(
 printlns(
     "  Without fuzzy matching, the only non-vacuous rules (support > 0) involve "
     + "cuisine and district because they contain exact duplicates. Restaurant names "
-    + "are all unique, so no pair of rows is similar on restaurant: rules that "
-    + "mention restaurant appear only with zero support and trivially maximal "
-    + "confidence 1.0 (an empty antecedent covers every pair vacuously), so they "
-    + "carry no information."
+    + "are all unique, so no pair of rows is similar on restaurant: every rule whose "
+    + "LHS contains restaurant has zero support. The minimal such LHS is the key "
+    + "{restaurant}, so among restaurant rules only [restaurant] -> [cuisine] and "
+    + "[restaurant] -> [district] are reported, with confidence 1.0. They are "
+    + "vacuously true because no pair "
+    + "satisfies the antecedent {restaurant}, and they are valid FDs because "
+    + "restaurant is a key. However, they tell us nothing about how cuisine "
+    + "depends on restaurant; pass include_key_rfds=False to hide them."
 )
 
 algo.execute(
@@ -540,9 +557,9 @@ printlns(
     "  Now the restaurant rules have real support! For instance, "
     + f"{GREEN}[restaurant] -> [cuisine]{RESET} has support 0.127 and confidence 0.857: "
     + "restaurants with similar names tend to serve the same cuisine, even when "
-    + "the names contain small typos. With exact equality this rule was an empty "
-    + "artifact (zero support); Jaccard on 2-grams absorbs spelling variations "
-    + "and gives the dependency real coverage."
+    + "the names contain small typos. With exact equality this rule was vacuous "
+    + "(restaurant is a key, so support is 0 and confidence is 1); Jaccard on "
+    + "2-grams absorbs spelling variations and gives the dependency real coverage."
 )
 printlns(
     f"  Support is low because very few restaurant-name pairs reach the "

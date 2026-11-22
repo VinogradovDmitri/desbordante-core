@@ -34,7 +34,7 @@ struct ARVerifierParams {
         : params({{onam::kCsvConfig, dataset.csv_config},
                   {onam::kInputFormat, model::InputFormatType::kSingular},
                   {onam::kArMinimumSupport, config.min_sup},
-                  {onam::kArMinimumConfidence, config.min_conf},
+                  {onam::kMinimumConfidence, config.min_conf},
                   {onam::kArLhsRule, config.left},
                   {onam::kArRhsRule, config.right},
                   {onam::kTIdColumnIndex, dataset.tid_col},
@@ -44,7 +44,7 @@ struct ARVerifierParams {
         : params({{onam::kCsvConfig, dataset.csv_config},
                   {onam::kInputFormat, model::InputFormatType::kTabular},
                   {onam::kArMinimumSupport, config.min_sup},
-                  {onam::kArMinimumConfidence, config.min_conf},
+                  {onam::kMinimumConfidence, config.min_conf},
                   {onam::kArLhsRule, config.left},
                   {onam::kArRhsRule, config.right},
                   {onam::kFirstColumnTId, dataset.first_col_tid}}) {}

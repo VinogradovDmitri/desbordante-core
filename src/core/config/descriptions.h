@@ -10,6 +10,7 @@ constexpr auto kDEqualNulls = "specify whether two NULLs should be considered eq
 constexpr auto kDError = "error threshold value for Approximate FD algorithms";
 constexpr auto kDLhsIndices = "LHS column indices";
 constexpr auto kDMaximumLhs = "max considered LHS size";
+constexpr auto kDMinimumConfidence = "minimum confidence value (between 0 and 1)";
 constexpr auto kDRhsIndices = "RHS column indices";
 constexpr auto kDSeed = "RNG seed";
 constexpr auto kDTable = "table processed by the algorithm";
@@ -32,7 +33,6 @@ constexpr auto kDWeight =
 constexpr auto kDFirstColumnTId = "indicates that the first column contains the transaction IDs";
 constexpr auto kDInputFormat = "format of the input dataset for AR mining\n[singular|tabular]";
 constexpr auto kDItemColumnIndex = "index of the column where an item name is stored";
-constexpr auto kDArMinimumConfidence = "Ar minimum confidence value (between 0 and 1)";
 constexpr auto kDArMinimumSupport = "Ar minimum support value (between 0 and 1)";
 constexpr auto kDArLhsRule = "left part of association rule to verify";
 constexpr auto kDArRhsRule = "right part of association rule to verify";
@@ -132,11 +132,11 @@ constexpr auto kDTimeLimitSeconds = "max running time of the algorithm. Pass 0 t
 constexpr auto kDRfdMinSimilarity =
         "minimum similarity in [0, 1] for two values to be considered similar. "
         "Pass 1 for exact match only";
-constexpr auto kDRfdMinimumConfidence =
-        "minimum confidence in [0, 1] describes the coverage percentage";
 constexpr auto kDRfdCrossoverProbability = "probability of applying crossover between individuals";
 constexpr auto kDRfdMutationProbability = "probability of mutating an individual";
 constexpr auto kDRfdMaxGenerations = "maximum number of genetic algorithm generations";
+constexpr auto kDRfdIncludeKeyRfds =
+        "report vacuously true RFDs with a minimal key in the LHS (support 0, confidence 1)";
 constexpr auto kDCacheMaxSize = "maximum size of the support cache";
 // GFD
 constexpr auto kDGfdData = "Path to file with GFD";

@@ -4,13 +4,10 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
-#include <list>
 #include <memory>
-#include <optional>
 #include <random>
-#include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -32,25 +29,21 @@ using AttributeMask = std::uint32_t;
 using LHS_Mask = std::uint32_t;
 using RHS_Index = std::uint8_t;
 
+struct Individual {
+    LHS_Mask lhs_mask = 0;
+    RHS_Index rhs_index = 0;
+    double support = 0.0;
+    double confidence = 0.0;
+
+    bool operator==(Individual const& other) const {
+        return lhs_mask == other.lhs_mask && rhs_index == other.rhs_index;
+    }
+};
+
+using Population = std::unordered_set<Individual>;
+
 class GaRfd final : public algos::Algorithm {
 private:
-    struct Individual {
-        LHS_Mask lhs_mask = 0;
-        std::uint8_t rhs_index = 0;
-        double support = 0.0;
-        double confidence = 0.0;
-
-        bool operator==(Individual const& other) const {
-            return lhs_mask == other.lhs_mask && rhs_index == other.rhs_index;
-        }
-    };
-
-    struct IndividualHash {
-        std::size_t operator()(Individual const& individual) const {
-            return (static_cast<std::size_t>(individual.lhs_mask) << 8) | individual.rhs_index;
-        }
-    };
-
     // Input
     config::InputTable input_table_;
     config::CustomMetricsOptionType metrics_;
@@ -64,12 +57,12 @@ private:
 
     AttributeMask full_mask_ = 0;
 
-    // separate bin column on chunk of 64 bit
+    // One bitset over all row pairs per attribute
     std::vector<boost::dynamic_bitset<std::uint64_t>> similar_pair_bits_;
     boost::dynamic_bitset<std::uint64_t> compute_buffer_;
 
     std::size_t cache_max_size_ = 10000;
-    std::unique_ptr<util::LRUCache<uint32_t, std::size_t>> support_cache_;
+    std::unique_ptr<util::LRUCache<AttributeMask, std::size_t>> support_cache_;
 
     // Parameters
     std::vector<double> min_similarity_;  // similarity thresholds per attribute in [0, 1]
@@ -78,7 +71,8 @@ private:
     std::size_t max_population_size_ = 1024;
     double crossover_probability_ = 1.0;
     double mutation_probability_ = 1.0;
-    std::uint32_t seed_ = 123;  // random number generator seed
+    bool include_key_rfds_ = true;
+    std::uint32_t seed_;  // overwritten by the seed option default
 
     std::vector<RFD> discovered_;
 
@@ -90,34 +84,29 @@ private:
     void ResetState() final;
 
     // helper methods
+    static Individual MakeIndividual(LHS_Mask lhs_mask, RHS_Index rhs_index);
+    static bool IsKey(Individual const& individual) noexcept;
     void BuildTypedMetrics();
     void BuildMatchBitsets();
-    std::size_t ComputeSupport(uint32_t attributes_mask);
+    std::size_t ComputeSupport(AttributeMask attributes_mask);
     // Computes conf and supp for a single individual
     Individual Evaluate(Individual const& individual);
-    // Computes conf and supp for all individuals
-    void EvaluatePopulation(std::unordered_set<Individual, IndividualHash>& population);
+    // Computes conf and supp for all individuals, moving vacuous (key-based) ones to `keys`
+    void EvaluatePopulation(Population& population, Population& keys);
     // Checks every individual's confidence meets the threshold
-    bool AllConfidencesAboveThreshold(
-            std::unordered_set<Individual, IndividualHash> const& population) const;
+    bool AllConfidencesAboveThreshold(Population const& population) const;
     // Computes fitness from confidence: 1.0 if confidence >= min_confidence_, else scaled.
     double Fitness(double confidence) const noexcept;
+    // Returns true if `lhs_mask` is a minimal key: zero support and no zero-support subset
+    bool IsMinimalKey(LHS_Mask lhs_mask);
 
     // GA methods
-    std::unordered_set<Individual, IndividualHash> InitializePopulation(
-            std::mt19937& random_generator) const;
-    std::unordered_set<Individual, IndividualHash> Select(
-            std::unordered_set<Individual, IndividualHash> const& population,
-            std::mt19937& random_generator) const;
-    std::unordered_set<Individual, IndividualHash> Crossover(
-            std::unordered_set<Individual, IndividualHash> const& selected,
-            std::mt19937& random_generator) const;
-    std::unordered_set<Individual, IndividualHash> Mutate(
-            std::unordered_set<Individual, IndividualHash> const& population,
-            std::mt19937& random_generator) const;
+    Population InitializePopulation(std::mt19937& random_generator) const;
+    Population Select(Population const& population, std::mt19937& random_generator) const;
+    Population Crossover(Population const& selected, std::mt19937& random_generator) const;
+    Population Mutate(Population const& population, std::mt19937& random_generator) const;
 
-    std::vector<RFD> Finalize(
-            std::unordered_set<Individual, IndividualHash> const& population) const;
+    std::vector<RFD> Finalize(Population const& population, Population const& keys);
 
 public:
     GaRfd();
@@ -128,3 +117,10 @@ public:
 };
 
 }  // namespace algos::rfd
+
+template <>
+struct std::hash<algos::rfd::Individual> {
+    std::size_t operator()(algos::rfd::Individual const& individual) const noexcept {
+        return (static_cast<std::size_t>(individual.lhs_mask) << 8) | individual.rhs_index;
+    }
+};

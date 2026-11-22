@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <bit>
-#include <bitset>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -15,7 +14,7 @@
 #include <string>
 #include <unordered_set>
 
-#include "core/config/custom_metric/custom_metrics/option.h"
+#include "core/algorithms/rfd/distance_metric.h"
 #include "core/config/descriptions.h"
 #include "core/config/exceptions.h"
 #include "core/config/names.h"
@@ -30,8 +29,8 @@ int FirstSetBitIndex(algos::rfd::AttributeMask value) noexcept {
     return value == 0 ? -1 : static_cast<int>(std::countr_zero(value));
 }
 
-bool IsBitSet(algos::rfd::LHS_Mask lhs_mask, std::size_t bit_idx) noexcept {
-    return (lhs_mask & (1u << bit_idx)) != 0;
+bool IsBitSet(algos::rfd::LHS_Mask mask, std::size_t bit_idx) noexcept {
+    return (mask & (1u << bit_idx)) != 0;
 }
 
 }  // namespace
@@ -46,9 +45,9 @@ GaRfd::GaRfd() {
 
 void GaRfd::MakeExecuteOptsAvailable() {
     using namespace config::names;
-    MakeOptionsAvailable({kRfdMinSimilarity, kArMinimumConfidence, kPopulationSize,
-                          kRfdMaxGenerations, kCrossoverProbability, kRfdMutationProbability, kSeed,
-                          kCustomMetrics, kCacheMaxSize});
+    MakeOptionsAvailable({kRfdMinSimilarity, kMinimumConfidence, kPopulationSize,
+                          kRfdMaxGenerations, kCrossoverProbability, kRfdMutationProbability,
+                          kRfdIncludeKeyRfds, kSeed, kCustomMetrics, kCacheMaxSize});
 }
 
 void GaRfd::RegisterOptions() {
@@ -68,6 +67,19 @@ void GaRfd::RegisterOptions() {
     auto check_population_size = [](std::size_t population_size) {
         if (population_size == 0)
             throw config::ConfigurationError("population_size must be positive");
+    };
+    auto default_metrics = [get_num_columns]() {
+        return config::CustomMetricsOptionType(get_num_columns(), EqualityMetric());
+    };
+    auto normalize_metrics = [](config::CustomMetricsOptionType& metrics) {
+        std::ranges::replace_if(metrics, std::logical_not{}, EqualityMetric());
+    };
+    auto check_metrics = [get_num_columns](config::CustomMetricsOptionType const& metrics) {
+        if (metrics.size() != get_num_columns()) {
+            throw config::ConfigurationError("Expected " + std::to_string(get_num_columns()) +
+                                             " user-defined metrics, got " +
+                                             std::to_string(metrics.size()));
+        }
     };
     auto default_min_similarity = [get_num_columns]() {
         return std::vector<double>(get_num_columns(), 1.0);
@@ -90,14 +102,19 @@ void GaRfd::RegisterOptions() {
     };
 
     RegisterOption(config::kTableOpt(&input_table_));
-    RegisterOption(config::MetricsOption{}(&metrics_, get_num_columns));
+    RegisterOption(Option<config::CustomMetricsOptionType>{
+            &metrics_, kCustomMetrics, kDCustomMetrics,
+            Option<config::CustomMetricsOptionType>::DefaultFunc(default_metrics)}
+                           .SetNormalizeFunc(normalize_metrics)
+                           .SetValueCheck(check_metrics));
     RegisterOption(Option<std::vector<double>>{
             &min_similarity_, kRfdMinSimilarity, kDRfdMinSimilarity,
             Option<std::vector<double>>::DefaultFunc(default_min_similarity)}
                            .SetNormalizeFunc(normalize_min_similarity)
                            .SetValueCheck(check_min_similarity));
-    RegisterOption(Option{&min_confidence_, kArMinimumConfidence, kDRfdMinimumConfidence, 1.0}
-                           .SetValueCheck(check_probability_range(kArMinimumConfidence)));
+    RegisterOption(
+            Option{&min_confidence_, kMinimumConfidence, kDMinimumConfidence, 1.0}.SetValueCheck(
+                    check_probability_range(kMinimumConfidence)));
     RegisterOption(Option{&max_population_size_, kPopulationSize, kDPopulationSize,
                           static_cast<std::size_t>(1024)}
                            .SetValueCheck(check_population_size));
@@ -109,6 +126,7 @@ void GaRfd::RegisterOptions() {
     RegisterOption(
             Option{&mutation_probability_, kRfdMutationProbability, kDRfdMutationProbability, 1.0}
                     .SetValueCheck(check_probability_range(kRfdMutationProbability)));
+    RegisterOption(Option{&include_key_rfds_, kRfdIncludeKeyRfds, kDRfdIncludeKeyRfds, true});
     RegisterOption(
             Option{&seed_, kSeed, kDSeed, static_cast<std::uint32_t>(std::random_device{}())});
     RegisterOption(Option{&cache_max_size_, kCacheMaxSize, kDCacheMaxSize,
@@ -124,7 +142,8 @@ void GaRfd::LoadDataInternal() {
     if (num_attributes_ < 2)
         throw config::ConfigurationError("GA-RFD requires at least 2 attributes");
     if (num_attributes_ > kMaxAttributes)
-        throw config::ConfigurationError("GA-RFD supports at most 32 attributes");
+        throw config::ConfigurationError("GA-RFD supports at most " +
+                                         std::to_string(kMaxAttributes) + " attributes");
     if (num_rows_ < 2) throw config::ConfigurationError("GA-RFD requires at least 2 rows");
     full_mask_ = num_attributes_ == std::numeric_limits<AttributeMask>::digits
                          ? std::numeric_limits<AttributeMask>::max()
@@ -133,17 +152,24 @@ void GaRfd::LoadDataInternal() {
     total_pairs_ = num_rows_ * (num_rows_ - 1) / 2;
 }
 
+Individual GaRfd::MakeIndividual(LHS_Mask lhs_mask, RHS_Index rhs_index) {
+    assert(lhs_mask != 0);
+    assert(!IsBitSet(lhs_mask, rhs_index));
+    return Individual{lhs_mask, rhs_index, 0.0, 0.0};
+}
+
+bool GaRfd::IsKey(Individual const& individual) noexcept {
+    return individual.support == 0.0;
+}
+
 void GaRfd::BuildTypedMetrics() {
     auto const& column_data = typed_relation_->GetColumnData();
     typed_metrics_.clear();
     typed_metrics_.reserve(num_attributes_);
     for (std::size_t attribute = 0; attribute < num_attributes_; ++attribute) {
         auto const& column = column_data[attribute];
-        typed_metrics_.push_back(
-                metrics_[attribute]
-                        ? metrics_[attribute]->SetType(&column.GetType(),
-                                                       input_table_->GetColumnName(attribute))
-                        : nullptr);
+        typed_metrics_.push_back(metrics_[attribute]->SetType(
+                &column.GetType(), input_table_->GetColumnName(attribute)));
     }
 }
 
@@ -241,7 +267,7 @@ std::size_t GaRfd::ComputeSupport(AttributeMask attributes_mask) {
     return support;
 }
 
-GaRfd::Individual GaRfd::Evaluate(Individual const& individual) {
+Individual GaRfd::Evaluate(Individual const& individual) {
     LHS_Mask const lhs_mask = individual.lhs_mask;
     RHS_Index const rhs_index = individual.rhs_index;
 
@@ -258,19 +284,21 @@ GaRfd::Individual GaRfd::Evaluate(Individual const& individual) {
     return {lhs_mask, rhs_index, support_lhs, confidence};
 }
 
-void GaRfd::EvaluatePopulation(std::unordered_set<Individual, IndividualHash>& population) {
+void GaRfd::EvaluatePopulation(Population& population, Population& keys) {
     auto it = population.begin();
     while (it != population.end()) {
         auto node = population.extract(it++);
-        if (!node.empty()) {
-            node.value() = Evaluate(node.value());
-            population.insert(std::move(node));
+        if (node.empty()) continue;
+        node.value() = Evaluate(node.value());
+        if (IsKey(node.value())) {
+            if (include_key_rfds_) keys.insert(node.value());
+            continue;
         }
+        population.insert(std::move(node));
     }
 }
 
-bool GaRfd::AllConfidencesAboveThreshold(
-        std::unordered_set<Individual, IndividualHash> const& population) const {
+bool GaRfd::AllConfidencesAboveThreshold(Population const& population) const {
     assert(!population.empty());
     return std::ranges::all_of(population, [this](Individual const& individual) {
         return individual.confidence >= min_confidence_;
@@ -281,9 +309,18 @@ double GaRfd::Fitness(double confidence) const noexcept {
     return confidence >= min_confidence_ ? 1.0 : confidence / min_confidence_;
 }
 
-std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::InitializePopulation(
-        std::mt19937& random_generator) const {
-    std::unordered_set<Individual, IndividualHash> population;
+bool GaRfd::IsMinimalKey(LHS_Mask lhs_mask) {
+    LHS_Mask remaining = lhs_mask;
+    while (remaining != 0) {
+        LHS_Mask const bit = remaining & (~remaining + 1);
+        if (ComputeSupport(lhs_mask ^ bit) == 0) return false;
+        remaining &= remaining - 1;
+    }
+    return true;
+}
+
+Population GaRfd::InitializePopulation(std::mt19937& random_generator) const {
+    Population population;
     population.reserve(max_population_size_);
 
     std::uniform_int_distribution<unsigned> rhs_dist(0, num_attributes_ - 1);
@@ -317,15 +354,13 @@ std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::InitializePo
             lhs_mask |= (1u << pool[position]);
         }
 
-        population.insert(Individual{lhs_mask, rhs_index, 0.0, 0.0});
+        population.insert(MakeIndividual(lhs_mask, rhs_index));
     }
     return population;
 }
 
-std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Select(
-        std::unordered_set<Individual, IndividualHash> const& population,
-        std::mt19937& random_generator) const {
-    std::unordered_set<Individual, IndividualHash> selected;
+Population GaRfd::Select(Population const& population, std::mt19937& random_generator) const {
+    Population selected;
     selected.reserve(population.size());
 
     std::uniform_real_distribution<double> uniform01(0.0, 1.0);
@@ -351,10 +386,8 @@ std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Select(
     return selected;
 }
 
-std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Crossover(
-        std::unordered_set<Individual, IndividualHash> const& selected,
-        std::mt19937& random_generator) const {
-    std::unordered_set<Individual, IndividualHash> offspring;
+Population GaRfd::Crossover(Population const& selected, std::mt19937& random_generator) const {
+    Population offspring;
     std::size_t const selected_size = selected.size();
     if (selected_size < 2) return offspring;
 
@@ -394,18 +427,16 @@ std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Crossover(
             if (rhs_first != rhs_second && coin(random_generator)) std::swap(rhs_first, rhs_second);
 
             if (mask_first != 0 && !IsBitSet(mask_first, rhs_first))
-                offspring.emplace(mask_first, rhs_first, 0.0, 0.0);
+                offspring.insert(MakeIndividual(mask_first, rhs_first));
             if (mask_second != 0 && !IsBitSet(mask_second, rhs_second))
-                offspring.emplace(mask_second, rhs_second, 0.0, 0.0);
+                offspring.insert(MakeIndividual(mask_second, rhs_second));
         }
     }
     return offspring;
 }
 
-std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Mutate(
-        std::unordered_set<Individual, IndividualHash> const& population,
-        std::mt19937& random_generator) const {
-    std::unordered_set<Individual, IndividualHash> mutated;
+Population GaRfd::Mutate(Population const& population, std::mt19937& random_generator) const {
+    Population mutated;
     mutated.reserve(population.size());
 
     std::uniform_real_distribution<double> uniform01(0.0, 1.0);
@@ -477,20 +508,18 @@ std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> GaRfd::Mutate(
         // Keep the individual only if it is a valid rule: lhs non-empty and
         // rhs not already in the lhs
         if (was_mutated && lhs_mask != 0 && !IsBitSet(lhs_mask, rhs_index))
-            mutated.emplace(lhs_mask, rhs_index, 0.0, 0.0);
+            mutated.insert(MakeIndividual(lhs_mask, rhs_index));
         else
             mutated.insert(individual);
     }
     return mutated;
 }
 
-std::vector<RFD> GaRfd::Finalize(
-        std::unordered_set<Individual, IndividualHash> const& population) const {
-    std::vector<RFD> result;
-    result.reserve(population.size());
+std::vector<RFD> GaRfd::Finalize(Population const& population, Population const& keys) {
+    std::vector<RFD> candidates;
+    candidates.reserve(population.size() + keys.size());
 
-    for (auto const& individual : population) {
-        if (individual.confidence < min_confidence_) continue;
+    auto make_rfd = [this](Individual const& individual) {
         RFD rfd;
         rfd.support = individual.support;
         rfd.confidence = individual.confidence;
@@ -500,8 +529,35 @@ std::vector<RFD> GaRfd::Finalize(
             if (!IsBitSet(individual.lhs_mask, attribute)) continue;
             rfd.lhs_indices.push_back(attribute);
         }
-        result.push_back(std::move(rfd));
+        return rfd;
+    };
+
+    for (auto const& individual : population) {
+        if (individual.confidence < min_confidence_) continue;
+        candidates.push_back(make_rfd(individual));
     }
+
+    if (include_key_rfds_) {
+        for (auto const& individual : keys) {
+            if (!IsMinimalKey(individual.lhs_mask)) continue;
+            candidates.push_back(make_rfd(individual));
+        }
+    }
+
+    // A rule is redundant if another reported rule has the same RHS and a
+    // smaller LHS. LHS indices are built in ascending order, so
+    // std::ranges::includes can be used
+    std::vector<RFD> result;
+    result.reserve(candidates.size());
+    for (RFD const& rfd : candidates) {
+        bool const subsumed = std::ranges::any_of(candidates, [&rfd](RFD const& other) {
+            if (other.rhs_index != rfd.rhs_index) return false;
+            if (other.lhs_indices.size() >= rfd.lhs_indices.size()) return false;
+            return std::ranges::includes(rfd.lhs_indices, other.lhs_indices);
+        });
+        if (!subsumed) result.push_back(rfd);
+    }
+
     LOG_INFO("Finalized {} unique RFDs", result.size());
     return result;
 }
@@ -513,9 +569,9 @@ void GaRfd::ExecuteInternal() {
 
     std::mt19937 random_generator(seed_);
 
-    std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> population =
-            InitializePopulation(random_generator);
-    EvaluatePopulation(population);
+    Population keys;
+    Population population = InitializePopulation(random_generator);
+    EvaluatePopulation(population, keys);
 
     for (std::size_t generation = 0; generation < max_generations_; ++generation) {
         LOG_INFO("Generation {}/{} (pop size: {})", generation + 1, max_generations_,
@@ -531,15 +587,13 @@ void GaRfd::ExecuteInternal() {
         }
         population = Select(population, random_generator);
 
-        std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> offspring =
-                Crossover(population, random_generator);
-        std::unordered_set<GaRfd::Individual, GaRfd::IndividualHash> mutated =
-                Mutate(population, random_generator);
+        Population offspring = Crossover(population, random_generator);
+        Population mutated = Mutate(population, random_generator);
 
         population.insert(offspring.begin(), offspring.end());
         population.insert(mutated.begin(), mutated.end());
 
-        EvaluatePopulation(population);
+        EvaluatePopulation(population, keys);
 
         if (population.size() > max_population_size_) {
             std::vector<Individual> cut(population.begin(), population.end());
@@ -551,7 +605,7 @@ void GaRfd::ExecuteInternal() {
             population = {cut.begin(), cut.end()};
         }
     }
-    discovered_ = Finalize(population);
+    discovered_ = Finalize(population, keys);
     std::sort(discovered_.begin(), discovered_.end());
 }
 

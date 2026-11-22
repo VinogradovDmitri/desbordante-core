@@ -63,7 +63,7 @@ void ARVerifier::RegisterOptions() {
 
 void ARVerifier::MakeExecuteOptsAvailable() {
     using namespace config::names;
-    MakeOptionsAvailable({kArLhsRule, kArRhsRule, kArMinimumSupport, kArMinimumConfidence});
+    MakeOptionsAvailable({kArLhsRule, kArRhsRule, kArMinimumSupport, kMinimumConfidence});
 }
 
 void ARVerifier::LoadDataInternal() {

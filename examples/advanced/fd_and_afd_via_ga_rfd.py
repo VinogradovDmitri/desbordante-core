@@ -5,9 +5,9 @@ Example: Mining FDs / AFDs via GA-RFD and verifying AFDs - Advanced
 This advanced example extends the basic (`mining_ga_rfd.py`) tutorial.
 It uses GA-RFD to mine exact functional dependencies (FDs) and 
 approximate FDs (AFDs), and then validates the discovered AFDs with 
-Desbordante's dedicated AFD verifier. We compare the confidence reported
-by GA-RFD with the g1 error computed by the verifier, showing how these 
-two measures relate.
+Desbordante's dedicated AFD verifier. GA-RFD's fitness is based on
+support and confidence; we compare its confidence with the g1 error
+computed by the verifier, showing how these two measures relate.
 
 The algorithm is based on the paper:
   L. Caruccio, V. Deufemia, G. Polese.
@@ -134,8 +134,10 @@ printlns(
 )
 printlns(
     "  By the end you will understand the difference between the confidence " +
-    "reported by GA-RFD (based on tuple pairs) and the g1 error from the " +
-    "AFD verifier (based on tuple pairs), and how these two measures correspond."
+    "reported by GA-RFD (the fraction of LHS-agreeing pairs that also agree on " +
+    "the RHS) and the g1 error from the AFD verifier (the fraction of all pairs " +
+    "that violate the FD), and how these two measures correspond. GA-RFD itself " +
+    "optimizes confidence, not g1."
 )
 
 # ------------------------------------------------------------
@@ -159,13 +161,15 @@ prints(f"  * {BOLD}shoe_size_eu{RESET} — European shoe size")
 print()
 
 # ------------------------------------------------------------
-# 3. Exact FDs (minconf=1.0, equality metrics)
+# 3. Exact FDs (minconf=1.0, min_similarity=1.0)
 # ------------------------------------------------------------
-banner("Exact FD discovery (minconf=1.0, equality metrics)", num=3)
+banner("Exact FD discovery (minconf=1.0, min_similarity=1.0)", num=3)
 
 printlns(
     "The GA-RFD algorithm can also mine classic exact functional dependencies. " +
-    "To do this, set minconf = 1.0 and use the default equality metric. "
+    "To do this, set minconf = 1.0 and keep min_similarity = 1.0 (the default): " +
+    "with the default equality metric, this threshold makes only " +
+    "exactly equal values count as similar. "
 )
 
 printlns("First, let us look once more at the sample data, this time noting the duplicates in rows 1-2 and 5-6.")
@@ -188,7 +192,7 @@ printlns(
     "and (row 5, row 6) with weight 81. In both pairs the height is also equal " + 
     "(175 and 178 respectively). Hence, among the 2 pairs that agree on the left side, " + 
     "both agree on the right side => confidence = 2/2 = 1.0. " + 
-    "Support = 2/28 ≈ 0.071 because the whole dependency holds for exactly 2 pairs."
+    "Support (LHS) = 2/28 ≈ 0.071 because exactly 2 pairs agree on weight_kg."
 )
 
 # ------------------------------------------------------------
@@ -197,10 +201,12 @@ printlns(
 banner("Approximate FD discovery: lowering minconf", num=4)
 
 printlns(
-    "  If we keep equality metrics but lower minconf below 1.0, the Relaxed Functional Dependency " +
-    "becomes an Approximate Functional Dependency with similarity metric g1. " +
-    "Setting minconf = 0.6 means we accept AFDs that hold in at least 60% of the cases. " + 
-    "Thus, the GA-RFD algorithm can search for AFD pattern too. "
+    "  If we keep this exact comparison but lower minconf below 1.0, the result " +
+    "is an approximate FD: under equality on every column, a rule holds on at " +
+    "least minconf of the pairs that agree on the LHS. Setting minconf = 0.6 " +
+    "means we accept rules that hold for at least 60% of the LHS-agreeing pairs. " +
+    "GA-RFD optimizes confidence, not g1; Section 5 compares those two measures " +
+    "independently. "
 )
 
 algo_afd = desbordante.rfd.algorithms.GaRfd()
@@ -272,25 +278,22 @@ print()
 printlns(f"{YELLOW}Observations{RESET}")
 printlns(
     "  The table compares the confidence reported by GA-RFD with the g1 error " +
-    "from the verifier. Confidence is defined as the fraction of pairs with " +
-    "equal LHS that also have equal RHS. The g1 error, on the other hand, is " +
-    "the fraction of all possible pairs in the dataset that violate the rule " +
-    "(LHS equal, RHS different)."
+    "from the verifier. Confidence is conditional: it is computed over pairs " +
+    "that agree on the LHS. The g1 error is global: it counts every violating " +
+    "pair in the dataset and divides by all tuple pairs."
 )
 printlns(
-    "  Because they are computed over different sets of pairs, 1 - Confidence and g1 error " +
-    "generally do not match. For example, in our 8-row dataset there are " +
-    "8*7/2 = 28 total pairs. For the dependency [height_cm] => [shoe_size_eu] " +
-    "only 4 pairs agree on height. Among those, 3 also agree on shoe size, " +
-    "so confidence = 3/4 = 0.75, and 1 - confidence = 0.25. However, the " +
-    "number of violating pairs is just 1 (rows 5 and 6), which gives a g1 " +
-    "error of 1/28 ≈ 0.036 — exactly the value shown by the verifier."
+    "  The exact relationship is g1 = supp(X) * (1 - conf(X -> Y)) = " +
+    "(count_lhs - count_both) / total_pairs. Here, for [height_cm] -> " +
+    "[shoe_size_eu], 4 of 28 pairs agree on height, and 3 of those also " +
+    "agree on shoe size. Thus confidence = 3/4 = 0.75 and support = 4/28, " +
+    "so g1 = (4/28) * (1 - 0.75) = 1/28 ≈ 0.036 — exactly the value shown " +
+    "by the verifier. The measures differ because confidence ignores pairs " +
+    "that disagree on the LHS, while g1 counts all violating pairs."
 )
 printlns(
-    "  This illustrates the important difference: g1 error gives a global, " +
-    "pair-based measure of how much the data deviates from a perfect FD, " +
-    "while confidence tells us how reliable the dependency is among the " +
-    "tuples that actually share the LHS values."
+    "  In short, confidence measures reliability among LHS-agreeing pairs, " +
+    "while g1 measures global deviation from a perfect FD."
 )
 
 # ------------------------------------------------------------
@@ -298,16 +301,17 @@ banner("Summary")
 
 prints("  In this advanced example we:")
 prints(
-    "  * Mined exact FDs and approximate FDs using GA-RFD with equality metrics."
+    "  * Mined exact FDs and approximate FDs using GA-RFD with exact comparisons."
 )
 prints(
     "  * Verified the AFDs with the AFD verifier, computing the g1 error and " +
     "comparing it to the confidence reported by the mining algorithm."
 )
 printlns(
-    "  * Understood the difference: confidence is based on tuple pairs, g1 error " +
-    "is the fraction of violating tuple pairs. Both are useful, but the verifier gives " + 
-    "a direct measure of data quality at the pair level."
+    "  * Understood the difference: confidence is conditional, computed over " +
+    "LHS-agreeing pairs only, while g1 is global, computed over all tuple pairs. " +
+    "Both are useful, but the verifier gives a direct measure of data quality " +
+    "at the pair level."
 )
 prints(
     "  When using RFDs for data cleaning, you can first mine approximate dependencies " +

@@ -15,7 +15,7 @@ protected:
                                            algos::des::DifferentialStrategy diffStrategy) {
         using namespace config::names;
         return {{kCsvConfig, csv_config},          {kArMinimumSupport, minsup},
-                {kArMinimumConfidence, minconf},   {kPopulationSize, popSize},
+                {kMinimumConfidence, minconf},     {kPopulationSize, popSize},
                 {kMaxFitnessEvaluations, evalNum}, {kCrossoverProbability, crossProb},
                 {kDifferentialScale, diffScale},   {kDifferentialStrategy, diffStrategy}};
     }

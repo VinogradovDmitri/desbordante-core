@@ -36,7 +36,7 @@ void NARAlgorithm::RegisterOptions() {
 
 void NARAlgorithm::MakeExecuteOptsAvailable() {
     using namespace config::names;
-    MakeOptionsAvailable({kArMinimumSupport, kArMinimumConfidence});
+    MakeOptionsAvailable({kArMinimumSupport, kMinimumConfidence});
 }
 
 }  // namespace algos

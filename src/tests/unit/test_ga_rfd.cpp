@@ -2,10 +2,12 @@
 #include <bit>
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -13,6 +15,7 @@
 #include "core/algorithms/algo_factory.h"
 #include "core/algorithms/rfd/distance_metric.h"
 #include "core/algorithms/rfd/ga_rfd/ga_rfd.h"
+#include "core/config/exceptions.h"
 #include "core/config/names.h"
 #include "core/config/tabular_data/input_table_type.h"
 #include "core/parser/csv_parser/csv_parser.h"
@@ -35,7 +38,7 @@ static algos::StdParamsMap MakeParams(CSVConfig const& csv_config, std::vector<d
     config::InputTable table = std::make_shared<CSVParser>(csv_config);
     algos::StdParamsMap params{{kTable, table},
                                {kRfdMinSimilarity, min_sim},
-                               {kArMinimumConfidence, min_confidence},
+                               {kMinimumConfidence, min_confidence},
                                {kPopulationSize, pop_size},
                                {kRfdMaxGenerations, max_gen},
                                {kCrossoverProbability, 0.85},
@@ -97,7 +100,7 @@ TEST(GARfd, AbsoluteDifferenceMetricYieldsRfdsOnIris) {
     algos::StdParamsMap params{{kTable, table},
                                {kCustomMetrics, ga_metrics},
                                {kRfdMinSimilarity, sim_vec},
-                               {kArMinimumConfidence, min_confidence},
+                               {kMinimumConfidence, min_confidence},
                                {kPopulationSize, pop_size},
                                {kRfdMaxGenerations, generations},
                                {kCrossoverProbability, 0.85},
@@ -386,6 +389,15 @@ TEST(GARfdEdge, SingleRowTableThrows) {
     EXPECT_THROW(algos::CreateAndLoadAlgorithm<GaRfd>(params), std::exception);
 }
 
+TEST(GARfdMetrics, DefaultMetricIsEquality) {
+    auto params = MakeParams(kRfdMixedNulls, std::vector<double>{1.0}, 0.0, 30, 10);
+    auto algo = algos::CreateAndLoadAlgorithm<GaRfd>(params);
+    algo->Execute();
+    auto rfds = algo->GetRfds();
+    ASSERT_FALSE(rfds.empty());
+    ExpectValidRfds(rfds, 0.0);
+}
+
 // Pairwise matching ignores NULL/empty values entirely: on
 // rfd_mixed_nulls.csv column 0 holds (1, hello, NULL, NULL), so no pair ever
 // matches on it. Therefore a rule whose LHS includes that attribute has zero
@@ -560,11 +572,12 @@ TEST(GARfdMinSimilarity, ExactMinSimilarityBorderNotLostToRounding) {
     EXPECT_TRUE(b_to_a) << "the pair with similarity exactly 0.9 must match as the LHS support";
 }
 
-// Completeness: with minconf = 1.0 the algorithm is expected to cover every
-// exact functional dependency of a small table, and the reported set must be
-// exactly the brute-force set of dependencies (including vacuous rules
-// determined by key columns)
-TEST(GARfdBruteForce, MinConfOneReportsExactlyAllExactFDs) {
+// Completeness and minimality: with minconf = 1.0 and equality metrics the
+// algorithm must report exactly the exact functional dependencies with a
+// minimal LHS (including vacuous rules determined by minimal keys). A rule
+// whose LHS strictly contains another reported LHS for the same RHS must not
+// be reported.
+TEST(GARfdBruteForce, MinConfOneReportsExactlyMinimalExactFDs) {
     auto parser = std::make_shared<CSVParser>(kRfdBruteSmall);
     std::vector<std::vector<std::string>> rows;
     while (parser->HasNextRow()) rows.push_back(parser->GetNextRow());
@@ -575,6 +588,9 @@ TEST(GARfdBruteForce, MinConfOneReportsExactlyAllExactFDs) {
     auto algo = algos::CreateAndLoadAlgorithm<GaRfd>(params);
     algo->Execute();
     auto rfds = algo->GetRfds();
+
+    using RuleKey = std::pair<AttributeMask, std::size_t>;
+    std::set<RuleKey> reported;
     for (auto const& rfd : rfds) {
         AttributeMask mask = 0;
         for (std::size_t index : rfd.lhs_indices) mask |= 1u << index;
@@ -583,25 +599,64 @@ TEST(GARfdBruteForce, MinConfOneReportsExactlyAllExactFDs) {
                 << "the algorithm reported an invalid rule " << rfd.ToString();
         EXPECT_DOUBLE_EQ(rfd.confidence, brute.confidence.at(key)) << rfd.ToString();
         EXPECT_DOUBLE_EQ(rfd.support, brute.support.at(key)) << rfd.ToString();
+        reported.emplace(mask, rfd.rhs_index);
     }
+
+    std::set<RuleKey> expected;
     for (auto const& [key, confidence] : brute.confidence) {
         if (confidence < 1.0) continue;
         AttributeMask const lhs_mask = static_cast<AttributeMask>(key & 0xFFFFFFFF);
         // the upper half of the key stores 1 << rhs, so the index is its
         // position of the set bit, not the shifted value itself
         std::size_t const rhs = static_cast<std::size_t>(std::countr_zero(key >> 32));
-        bool found = false;
-        for (auto const& rfd : rfds) {
-            AttributeMask mask = 0;
-            for (std::size_t index : rfd.lhs_indices) mask |= 1u << index;
-            if (mask == lhs_mask && rfd.rhs_index == rhs) {
-                found = true;
+
+        bool minimal = true;
+        for (AttributeMask subset = (lhs_mask - 1) & lhs_mask; subset != 0;
+             subset = (subset - 1) & lhs_mask) {
+            auto const subset_key = CandidateKey(subset, rhs);
+            if (brute.confidence.contains(subset_key) && brute.confidence.at(subset_key) >= 1.0) {
+                minimal = false;
                 break;
             }
         }
-        EXPECT_TRUE(found) << "the exact FD with lhs mask " << lhs_mask << " and rhs " << rhs
-                           << " was missed";
+        if (minimal) expected.emplace(lhs_mask, rhs);
     }
+
+    EXPECT_EQ(reported, expected);
+}
+
+// The key-based (vacuous) rules live outside the GA population but can be
+// disabled with include_key_rfds = false. Every reported rule must then have
+// positive support.
+TEST(GARfdKeys, IncludeKeyRfdsOption) {
+    auto execute = [](bool include_key_rfds) {
+        auto params = MakeParams(kRfdUniqueKey, 1.0, 0.0, 30, 10, EqualityMetrics(3));
+        params[kRfdIncludeKeyRfds] = include_key_rfds;
+        auto algo = algos::CreateAndLoadAlgorithm<GaRfd>(params);
+        algo->Execute();
+        return algo->GetRfds();
+    };
+
+    auto with_keys = execute(true);
+    auto const has_key_rule = std::ranges::any_of(with_keys, [](RFD const& rfd) {
+        return rfd.lhs_indices == std::vector<std::size_t>{0} && rfd.rhs_index == 1 &&
+               rfd.support == 0.0;
+    });
+    EXPECT_TRUE(has_key_rule) << "{id} -> a must be reported by default";
+
+    auto without_keys = execute(false);
+    EXPECT_FALSE(without_keys.empty());
+    for (auto const& rfd : without_keys) {
+        EXPECT_GT(rfd.support, 0.0) << rfd.ToString();
+    }
+}
+
+TEST(GARfdMetric, AbsoluteThresholdRejectsInvalidTolerance) {
+    EXPECT_THROW(AbsoluteThresholdMetricFactory(-0.1), config::ConfigurationError);
+    EXPECT_THROW(AbsoluteThresholdMetricFactory(-std::numeric_limits<double>::infinity()),
+                 config::ConfigurationError);
+    EXPECT_THROW(AbsoluteThresholdMetricFactory(std::numeric_limits<double>::quiet_NaN()),
+                 config::ConfigurationError);
 }
 
 }  // namespace tests

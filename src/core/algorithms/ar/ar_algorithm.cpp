@@ -44,7 +44,7 @@ void ARAlgorithm::ResetState() {
 
 void ARAlgorithm::MakeExecuteOptsAvailable() {
     using namespace config::names;
-    MakeOptionsAvailable({kArMinimumSupport, kArMinimumConfidence});
+    MakeOptionsAvailable({kArMinimumSupport, kMinimumConfidence});
 }
 
 void ARAlgorithm::LoadDataInternal() {

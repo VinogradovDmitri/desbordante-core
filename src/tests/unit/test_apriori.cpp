@@ -79,7 +79,7 @@ protected:
         return {{kCsvConfig, csv_config},
                 {kInputFormat, model::InputFormatType::kSingular},
                 {kArMinimumSupport, minsup},
-                {kArMinimumConfidence, minconf},
+                {kMinimumConfidence, minconf},
                 {kTIdColumnIndex, tidColumnIndex},
                 {kItemColumnIndex, itemColumnIndex}};
     }
@@ -90,7 +90,7 @@ protected:
         return {{kCsvConfig, csv_config},
                 {kInputFormat, model::InputFormatType::kTabular},
                 {kArMinimumSupport, minsup},
-                {kArMinimumConfidence, minconf},
+                {kMinimumConfidence, minconf},
                 {kFirstColumnTId, firstColumnTid}};
     }
 
